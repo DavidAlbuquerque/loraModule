@@ -6,7 +6,7 @@ reset
 set term postscript eps color blacktext "Times-Roman-Bold" 16
 set grid
 #set key box lt -1 lw 2
-set xrange [0:2000]
+set xrange [0:1500]
 set xtics 400 font "Times-Roman-Bold,18"
 set yrange [0.1:1]
 set ytics font "times-Roman-bold,18"
@@ -14,10 +14,10 @@ set ylabel "Packet Success Probability (%)" font "Times-Roman-Bold,20"
 set xlabel "# endNodes" font "times-Roman-Bold,20"
 set output './TestResult/probSuccess_multClass_3.eps'
 #set key bottom
-set key reverse vertical right
-set format y "10^{%L}"
-set grid ytics mytics
-set logscale y 10
+#set key reverse vertical right
+#set format y "10^{%L}"
+#set grid ytics mytics
+#set logscale y 10
 
 # line styles
 set style line 1 lc rgb '#0000ff' lw 3 # blue
@@ -38,11 +38,8 @@ set style line 10 lt 2 lc rgb '#000000' lw 3 # black
 filename1='./TestResult/result-math-SF789_PLB.dat'
 filename2='./TestResult/result-math-SF789_EAB.dat'
 filename3='./TestResult/result-math-SF789_ONI.dat'
-filename4='./TestResult/result-math-SF789_OFI.dat'
-filename5='./TestResult/result-sim-SF789_PLB.dat'
-filename6='./TestResult/result-sim-SF789_EAB.dat'
-filename7='./TestResult/result-sim-SF789_ONI.dat'
-filename8='./TestResult/result-sim-SF789_OFI.dat'
+
+
 
 
 # Plot the data
