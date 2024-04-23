@@ -517,14 +517,25 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime,
     double sent = 0;
     double received = 0;
     std::vector<double> rtxCounts(4, 0);
-
+    int contagem = 0;
     for (auto it = m_reTransmissionTracker.begin(); it != m_reTransmissionTracker.end(); ++it)
     {
+        NS_LOG_DEBUG("Contagem: " << contagem);
         if ((*it).second.sf == sf)
         {
-            Ptr<Packet> packetCopy = (*it).first->Copy();
             LorawanMacHeader mHdr;
             LoraFrameHeader fHdr;
+            Ptr<Packet> packetCopy;
+            if ((*it).first == nullptr)
+            {
+                NS_LOG_DEBUG(static_cast<int>((*it).second.sf));
+                NS_LOG_DEBUG("AAAAAAAAAAAAAAAAAAAAAAAAAA ESSA PORRA TA NULLPTR PQ???????");
+            }
+            else
+            {
+                packetCopy = (*it).first->Copy();
+                // Faça algo com packetCopy
+            }
             packetCopy->RemoveHeader(mHdr);
             packetCopy->RemoveHeader(fHdr);
             LoraDeviceAddress address = fHdr.GetAddress();
@@ -549,6 +560,7 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime,
                 }
             }
         }
+        contagem++;
     }
     std::string output("");
     for (int i = 0; i < 4; i++)

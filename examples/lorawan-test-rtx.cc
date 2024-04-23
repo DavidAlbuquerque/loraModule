@@ -54,8 +54,12 @@ using namespace std;
 
 NS_LOG_COMPONENT_DEFINE("LorawanNetworkSimulatorMClass");
 
+/*Configuração da execução*/
 #define RTX_ONLY_SF7 1
-#define RTX_ONLY_SF7_device 1
+#define RTX_ONLY_DEVICE_TYPE 1
+#define RTX_REGULAR 1
+/*************************/
+
 #define MAXRTX 4
 
 #define CONFIGURE_LORAWAN_DEVICE_MAC(device)                                                       \
@@ -120,6 +124,26 @@ enum deviceType
     REGULAR_DEVICE,
     ALL
 };
+
+void
+writeRTXMetrics(ofstream& myfile,
+                const string& fileMetric,
+                uint8_t sf,
+                uint16_t nDevices,
+                double sent,
+                const vector<double>& rtxQuant)
+{
+    vector<double> sortedRtxQuant = rtxQuant; // Cria uma cópia local do vetor
+    sort(sortedRtxQuant.begin(), sortedRtxQuant.end(), greater<double>()); // Ordena a cópia
+    myfile.open(fileMetric + "-RTX" + to_string(sf) + ".dat", ios::out | ios::app);
+    myfile << nDevices << ", " << sent;
+    for (uint8_t i = 0; i < sortedRtxQuant.size(); i++)
+    {
+        myfile << ", " << sortedRtxQuant[i];
+    }
+    myfile << "\n";
+    myfile.close();
+}
 
 /*
  * ===  FUNCTION  ======================================================================
@@ -241,53 +265,22 @@ metricsResultFile(LoraPacketTracker& tracker,
                    << avgDelay << "\n";
             myfile.close();
 
-            if (flagRtx && i == SF7 && RTX_ONLY_SF7)
+            if (flagRtx && (RTX_ONLY_SF7 || RTX_ONLY_DEVICE_TYPE))
             {
                 stringstream(tracker.CountMacPacketsGloballyCpsr(Seconds(0),
                                                                  appStopTime + Hours(2),
                                                                  i,
                                                                  mapDevices)) >>
                     rtxQuant.at(0) >> rtxQuant.at(1) >> rtxQuant.at(2) >> rtxQuant.at(3);
-                NS_LOG_DEBUG("entrou em rtx" << endl << endl << endl);
-                sort(rtxQuant.begin(), rtxQuant.end(), greater<double>());
-                myfile.open(fileMetric + "-RTX" + to_string(i) + ".dat", ios::out | ios::app);
-                myfile << nDevices << ", " << sent;
-                for (uint8_t i = 0; i < rtxQuant.size(); i++)
-                    myfile << ", " << rtxQuant[i];
-                myfile << "\n";
-                myfile.close();
+                writeRTXMetrics(myfile, fileMetric, i, nDevices, sent, rtxQuant);
             }
 
-            else if (flagRtx && device == ALL && !RTX_ONLY_SF7)
+            else if (flagRtx && !(RTX_ONLY_SF7 || RTX_ONLY_DEVICE_TYPE))
             {
                 stringstream(
                     tracker.CountMacPacketsGloballyCpsr(Seconds(0), appStopTime + Hours(2), i)) >>
                     rtxQuant.at(0) >> rtxQuant.at(1) >> rtxQuant.at(2) >> rtxQuant.at(3);
-                NS_LOG_DEBUG("entrou em rtxAll" << endl << endl << endl);
-                sort(rtxQuant.begin(), rtxQuant.end(), greater<double>());
-                myfile.open(fileMetric + "-RTX" + to_string(i) + ".dat", ios::out | ios::app);
-                myfile << nDevices << ", " << sent;
-                for (uint8_t i = 0; i < rtxQuant.size(); i++)
-                    myfile << ", " << rtxQuant[i];
-                myfile << "\n";
-                myfile.close();
-            }
-
-            else if (flagRtx && !RTX_ONLY_SF7)
-            {
-                stringstream(tracker.CountMacPacketsGloballyCpsr(Seconds(0),
-                                                                 appStopTime + Hours(2),
-                                                                 i,
-                                                                 mapDevices)) >>
-                    rtxQuant.at(0) >> rtxQuant.at(1) >> rtxQuant.at(2) >> rtxQuant.at(3);
-                NS_LOG_DEBUG("entrou em rtx" << endl << endl << endl);
-                sort(rtxQuant.begin(), rtxQuant.end(), greater<double>());
-                myfile.open(fileMetric + "-RTX" + to_string(i) + ".dat", ios::out | ios::app);
-                myfile << nDevices << ", " << sent;
-                for (uint8_t i = 0; i < rtxQuant.size(); i++)
-                    myfile << ", " << rtxQuant[i];
-                myfile << "\n";
-                myfile.close();
+                writeRTXMetrics(myfile, fileMetric, i, nDevices, sent, rtxQuant);
             }
 
             NS_LOG_INFO("numDev:" << nDevices << " numGW:" << nGateways
@@ -891,14 +884,18 @@ main(int argc, char* argv[])
 
     // Combine end devices into a single NodeContainer
     NodeContainer combinedEndDevices;
+    std::map<ns3::Ptr<ns3::Node>, deviceType> deviceTypeMap;
+
     for (NodeContainer::Iterator it = endDevicesRegular.Begin(); it != endDevicesRegular.End();
          ++it)
     {
+        deviceTypeMap[*it] = REGULAR_DEVICE;
         combinedEndDevices.Add(*it);
     }
 
     for (NodeContainer::Iterator it = endDevicesAlarm.Begin(); it != endDevicesAlarm.End(); ++it)
     {
+        deviceTypeMap[*it] = ALARM_DEVICE;
         combinedEndDevices.Add(*it);
     }
 
@@ -1029,7 +1026,7 @@ main(int argc, char* argv[])
     /**********************************************
      *  enabling relaying on end devices  *
      **********************************************/
-    if (flagRtx)
+    /* if (flagRtx)
     {
         for (NodeContainer::Iterator j = combinedEndDevices.Begin(); j != combinedEndDevices.End();
              ++j)
@@ -1047,7 +1044,6 @@ main(int argc, char* argv[])
                     bool isEndDeviceRegular = (j < endDevicesRegular.End());
                 case 0:
 
-                    /*Regular device*/
 
                     if ((static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()) == 7) &&
                         RTX_ONLY_SF7 && isEndDeviceRegular)
@@ -1061,7 +1057,6 @@ main(int argc, char* argv[])
 
                 case 1:
 
-                    /*Alarm device*/
 
                     if ((static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()) == 7) &&
                         RTX_ONLY_SF7 && !isEndDeviceRegular)
@@ -1078,6 +1073,55 @@ main(int argc, char* argv[])
             }
 
             else if (!RTX_ONLY_SF7)
+            {
+                Ptr<EndDeviceLorawanMac> mac =
+                    loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
+                mac->SetMaxNumberOfTransmissions(MAXRTX);
+                mac->SetMType(LorawanMacHeader::CONFIRMED_DATA_UP);
+            }
+        }
+    } */
+
+    if (flagRtx)
+    {
+        (std::map<ns3::Ptr<ns3::Node>, deviceType>::iterator j = deviceTypeMap.begin();
+         j != deviceTypeMap.end();
+         ++j)
+        {
+            Ptr<Node> node = *j;
+            Ptr<LoraNetDevice> loraNetDevice = node->GetDevice(0)->GetObject<LoraNetDevice>();
+            Ptr<LoraPhy> phy = loraNetDevice->GetPhy();
+            Ptr<EndDeviceLoraPhy> endDeviceLoraPhy = phy->GetObject<EndDeviceLoraPhy>();
+
+            bool isRtx = false;
+
+            if (RTX_ONLY_DEVICE_TYPE)
+            {
+                bool isEndDeviceRegular = (*j).second == REGULAR_DEVICE;
+                if (RTX_REGULAR && isEndDeviceRegular)
+                {
+                    /*rtx em dispositivos regular*/
+                    isRtx = true;
+                }
+                else if (!RTX_REGULAR && !isEndDeviceRegular)
+                {
+                    /*rtx em dispositivos alarm*/
+                    isRtx = true;
+                }
+            }
+
+            if (RTX_ONLY_SF7)
+            {
+                isRtx = (static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()) == 7);
+            }
+
+            if (!RTX_ONLY_SF7 && !RTX_ONLY_DEVICE_TYPE)
+            {
+                /*rtx all*/
+                isRtx = true;
+            }
+
+            if (isRtx)
             {
                 Ptr<EndDeviceLorawanMac> mac =
                     loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
