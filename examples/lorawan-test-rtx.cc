@@ -52,29 +52,16 @@ using namespace ns3;
 using namespace lorawan;
 using namespace std;
 
-NS_LOG_COMPONENT_DEFINE("LorawanNetworkSimulatorMClass");
-
-/*Configuração da execução*/
-#define RTX_ONLY_SF7 1
-#define RTX_ONLY_DEVICE_TYPE 1
-#define RTX_REGULAR 1
-/*************************/
+NS_LOG_COMPONENT_DEFINE("LorawanTestSimulatorRTX");
 
 #define MAXRTX 4
 
-#define CONFIGURE_LORAWAN_DEVICE_MAC(device)                                                       \
-    auto mac = device->GetMac() -> GetObject<EndDeviceLorawanMac>();                               \
-    mac->SetMaxNumberOfTransmissions(MAXRTX);                                                      \
-    mac->SetMType(LorawanMacHeader::CONFIRMED_DATA_UP);
-
 // File settings
-// string fileData = "./scratch/result-STAs.dat";
-// string fileMetric = "./scratch/mac-STAs-GW-1.txt";
 string endDevRegularFile = "./scratch/TestResult/test";
 string endDevAlarmeFile = "./scratch/TestResult/test";
 string gwFile = "./scratch/TestResult/test";
 
-bool connectTraceSoucer = false;
+bool connectTraceSoucer = true;
 bool flagRtx = false; //, sizeStatus=0;
 uint32_t nSeed = 1;
 uint8_t trial = 1, numClass = 0; //, nCount=0, nClass1=0, nClass2=0, nClass3=0;
@@ -118,6 +105,14 @@ enum SF
     SF12
 };
 
+enum simulationType
+{
+    S_TODOS,
+    S_SF7,
+    S_REGULARES_SF7,
+    S_ALARM_SF7
+};
+
 enum deviceType
 {
     ALARM_DEVICE = 0,
@@ -126,23 +121,53 @@ enum deviceType
 };
 
 void
-writeRTXMetrics(ofstream& myfile,
-                const string& fileMetric,
-                uint8_t sf,
-                uint16_t nDevices,
-                double sent,
-                const vector<double>& rtxQuant)
+simulationConfig(simulationType type, std::map<ns3::Ptr<ns3::Node>, deviceType> deviceTypeMap)
 {
-    vector<double> sortedRtxQuant = rtxQuant; // Cria uma cópia local do vetor
-    sort(sortedRtxQuant.begin(), sortedRtxQuant.end(), greater<double>()); // Ordena a cópia
-    myfile.open(fileMetric + "-RTX" + to_string(sf) + ".dat", ios::out | ios::app);
-    myfile << nDevices << ", " << sent;
-    for (uint8_t i = 0; i < sortedRtxQuant.size(); i++)
+    for (std::map<ns3::Ptr<ns3::Node>, deviceType>::iterator j = deviceTypeMap.begin();
+         j != deviceTypeMap.end();
+         ++j)
     {
-        myfile << ", " << sortedRtxQuant[i];
+        Ptr<Node> node = j->first;
+        Ptr<LoraNetDevice> loraNetDevice = node->GetDevice(0)->GetObject<LoraNetDevice>();
+        Ptr<LoraPhy> phy = loraNetDevice->GetPhy();
+        Ptr<EndDeviceLoraPhy> endDeviceLoraPhy = phy->GetObject<EndDeviceLoraPhy>();
+
+        bool isRtx = false;
+
+        switch (type)
+        {
+        case S_TODOS:
+            isRtx = true;
+            break;
+
+        case S_SF7:
+            isRtx = static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()) == 7;
+            break;
+
+        case S_REGULARES_SF7:
+            isRtx = j->second == REGULAR_DEVICE;
+            break;
+
+        case S_ALARM_SF7:
+            isRtx = j->second == ALARM_DEVICE;
+            break;
+
+        default:
+            break;
+        }
+
+        if (isRtx)
+        {
+            NS_LOG_DEBUG("RTX --> "
+                         << "device: " << j->second
+                         << " SF: " << static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()));
+
+            Ptr<EndDeviceLorawanMac> mac =
+                loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
+            mac->SetMaxNumberOfTransmissions(MAXRTX);
+            mac->SetMType(LorawanMacHeader::CONFIRMED_DATA_UP);
+        }
     }
-    myfile << "\n";
-    myfile.close();
 }
 
 /*
@@ -201,6 +226,8 @@ metricsResultFile(LoraPacketTracker& tracker,
                                  << (unsigned)sfQuant.at(1) << " SF9=" << (unsigned)sfQuant.at(2)
                                  << " SF10=" << (unsigned)sfQuant.at(3) << " SF11="
                                  << (unsigned)sfQuant.at(4) << " SF12=" << (unsigned)sfQuant.at(5));
+
+    int countSF = 0;
     for (uint8_t i = SF7; i <= SF12; i++)
     {
         if (sfQuant.at(i - SF7))
@@ -238,8 +265,6 @@ metricsResultFile(LoraPacketTracker& tracker,
                     avgDelay;
             }
 
-            NS_LOG_DEBUG("passou daqui");
-
             packLoss = sent - received;
             throughput = received / simulationTime;
 
@@ -265,23 +290,33 @@ metricsResultFile(LoraPacketTracker& tracker,
                    << avgDelay << "\n";
             myfile.close();
 
-            if (flagRtx && (RTX_ONLY_SF7 || RTX_ONLY_DEVICE_TYPE))
+            if (flagRtx && deviceMetric != "all devices")
             {
+                NS_LOG_DEBUG(deviceMetric);
                 stringstream(tracker.CountMacPacketsGloballyCpsr(Seconds(0),
                                                                  appStopTime + Hours(2),
                                                                  i,
                                                                  mapDevices)) >>
                     rtxQuant.at(0) >> rtxQuant.at(1) >> rtxQuant.at(2) >> rtxQuant.at(3);
-                writeRTXMetrics(myfile, fileMetric, i, nDevices, sent, rtxQuant);
             }
 
-            else if (flagRtx && !(RTX_ONLY_SF7 || RTX_ONLY_DEVICE_TYPE))
+            else if (flagRtx)
             {
                 stringstream(
                     tracker.CountMacPacketsGloballyCpsr(Seconds(0), appStopTime + Hours(2), i)) >>
                     rtxQuant.at(0) >> rtxQuant.at(1) >> rtxQuant.at(2) >> rtxQuant.at(3);
-                writeRTXMetrics(myfile, fileMetric, i, nDevices, sent, rtxQuant);
+                // writeRTXMetrics(myfile, fileMetric, i, nDevices, sent, rtxQuant);
             }
+
+            sort(rtxQuant.begin(), rtxQuant.end(), greater<double>());
+            myfile.open(fileMetric + "-RTX" + to_string(i) + ".dat", ios::out | ios::app);
+            myfile << nDevices << ", " << sent;
+            for (uint8_t i = 0; i < rtxQuant.size(); i++)
+            {
+                myfile << ", " << rtxQuant[i];
+            }
+            myfile << "\n";
+            myfile.close();
 
             NS_LOG_INFO("numDev:" << nDevices << " numGW:" << nGateways
                                   << " simTime:" << simulationTime << " throughput:" << throughput);
@@ -309,6 +344,11 @@ metricsResultFile(LoraPacketTracker& tracker,
             NS_LOG_INFO("//////////////////////////////////////////////" << endl);
             NS_LOG_INFO("##################################################################\n");
         }
+
+        NS_LOG_DEBUG("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                     "AAAAAAAAAAAAAAAAAAA -> "
+                     << countSF);
+        countSF++;
     }
 
     NS_LOG_INFO(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
@@ -752,7 +792,7 @@ main(int argc, char* argv[])
     gwFile += to_string(trial) + "/GWs" + to_string(nGateways) + ".dat";
 
     // Set up logging
-    LogComponentEnable("LorawanNetworkSimulatorMClass", LOG_LEVEL_ALL);
+    LogComponentEnable("LorawanTestSimulatorRTX", LOG_LEVEL_ALL);
     // LogComponentEnable("LoraPacketTracker", LOG_LEVEL_ALL);
     //  LogComponentEnable("LoraChannel", LOG_LEVEL_INFO);
     //  LogComponentEnable("LoraPhy", LOG_LEVEL_ALL);
@@ -768,7 +808,7 @@ main(int argc, char* argv[])
     //  LogComponentEnable("GatewayLorawanMac", LOG_LEVEL_ALL);
     //  LogComponentEnable("LogicalLoraChannelHelper", LOG_LEVEL_ALL);
     //  LogComponentEnable("LogicalLoraChannel", LOG_LEVEL_ALL);
-    //  LogComponentEnable("LoraHelper", LOG_LEVEL_ALL);
+    // LogComponentEnable("LoraHelper", LOG_LEVEL_ALL);
     //  LogComponentEnable("LoraPhyHelper", LOG_LEVEL_ALL);
     //  LogComponentEnable("LorawanMacHelper", LOG_LEVEL_ALL);
     //  LogComponentEnable("PeriodicSenderHelper", LOG_LEVEL_ALL);
@@ -874,14 +914,6 @@ main(int argc, char* argv[])
     endDevicesRegular.Create(nDevicesRegular);
     endDevicesAlarm.Create(nDevicesAlarm);
 
-    // Assign a mobility model to each node
-    mobility.Install(endDevicesRegular);
-    mobility.Install(endDevicesAlarm);
-
-    // Installing sender type
-    ramdomHelper.Install(endDevicesAlarm);
-    periodicHelper.Install(endDevicesRegular);
-
     // Combine end devices into a single NodeContainer
     NodeContainer combinedEndDevices;
     std::map<ns3::Ptr<ns3::Node>, deviceType> deviceTypeMap;
@@ -898,6 +930,14 @@ main(int argc, char* argv[])
         deviceTypeMap[*it] = ALARM_DEVICE;
         combinedEndDevices.Add(*it);
     }
+
+    // Installing sender type
+    ramdomHelper.Install(endDevicesAlarm);
+    periodicHelper.Install(endDevicesRegular);
+
+    // Assign a mobility model to each node
+    mobility.Install(endDevicesRegular);
+    mobility.Install(endDevicesAlarm);
 
     // Make it so that nodes are at a certain height > 0
     for (NodeContainer::Iterator j = combinedEndDevices.Begin(); j != combinedEndDevices.End(); ++j)
@@ -1023,112 +1063,12 @@ main(int argc, char* argv[])
     for (uint16_t i = 0; i < sfQuantAll.size(); i++)
         sfQuantAll.at(i) = sfQuantAlarm.at(i) + sfQuantRegular.at(i);
 
-    /**********************************************
-     *  enabling relaying on end devices  *
-     **********************************************/
-    /* if (flagRtx)
-    {
-        for (NodeContainer::Iterator j = combinedEndDevices.Begin(); j != combinedEndDevices.End();
-             ++j)
-        {
-            Ptr<Node> node = *j;
-            Ptr<LoraNetDevice> loraNetDevice = node->GetDevice(0)->GetObject<LoraNetDevice>();
-            Ptr<LoraPhy> phy = loraNetDevice->GetPhy();
-            Ptr<EndDeviceLoraPhy> endDeviceLoraPhy = phy->GetObject<EndDeviceLoraPhy>();
-
-            if ((static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()) == 7) && RTX_ONLY_SF7)
-            {
-                int mode = RTX_ONLY_SF7_device;
-                switch (mode)
-                {
-                    bool isEndDeviceRegular = (j < endDevicesRegular.End());
-                case 0:
-
-
-                    if ((static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()) == 7) &&
-                        RTX_ONLY_SF7 && isEndDeviceRegular)
-                    {
-                        Ptr<EndDeviceLorawanMac> mac =
-                            loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
-                        mac->SetMaxNumberOfTransmissions(MAXRTX);
-                        mac->SetMType(LorawanMacHeader::CONFIRMED_DATA_UP);
-                    }
-                    break;
-
-                case 1:
-
-
-                    if ((static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()) == 7) &&
-                        RTX_ONLY_SF7 && !isEndDeviceRegular)
-                    {
-                        Ptr<EndDeviceLorawanMac> mac =
-                            loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
-                        mac->SetMaxNumberOfTransmissions(MAXRTX);
-                        mac->SetMType(LorawanMacHeader::CONFIRMED_DATA_UP);
-                    }
-                    break;
-                default:
-                    break;
-                }
-            }
-
-            else if (!RTX_ONLY_SF7)
-            {
-                Ptr<EndDeviceLorawanMac> mac =
-                    loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
-                mac->SetMaxNumberOfTransmissions(MAXRTX);
-                mac->SetMType(LorawanMacHeader::CONFIRMED_DATA_UP);
-            }
-        }
-    } */
-
+    /*********************************************
+     *  Retransmission  *
+     *********************************************/
     if (flagRtx)
     {
-        (std::map<ns3::Ptr<ns3::Node>, deviceType>::iterator j = deviceTypeMap.begin();
-         j != deviceTypeMap.end();
-         ++j)
-        {
-            Ptr<Node> node = *j;
-            Ptr<LoraNetDevice> loraNetDevice = node->GetDevice(0)->GetObject<LoraNetDevice>();
-            Ptr<LoraPhy> phy = loraNetDevice->GetPhy();
-            Ptr<EndDeviceLoraPhy> endDeviceLoraPhy = phy->GetObject<EndDeviceLoraPhy>();
-
-            bool isRtx = false;
-
-            if (RTX_ONLY_DEVICE_TYPE)
-            {
-                bool isEndDeviceRegular = (*j).second == REGULAR_DEVICE;
-                if (RTX_REGULAR && isEndDeviceRegular)
-                {
-                    /*rtx em dispositivos regular*/
-                    isRtx = true;
-                }
-                else if (!RTX_REGULAR && !isEndDeviceRegular)
-                {
-                    /*rtx em dispositivos alarm*/
-                    isRtx = true;
-                }
-            }
-
-            if (RTX_ONLY_SF7)
-            {
-                isRtx = (static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()) == 7);
-            }
-
-            if (!RTX_ONLY_SF7 && !RTX_ONLY_DEVICE_TYPE)
-            {
-                /*rtx all*/
-                isRtx = true;
-            }
-
-            if (isRtx)
-            {
-                Ptr<EndDeviceLorawanMac> mac =
-                    loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
-                mac->SetMaxNumberOfTransmissions(MAXRTX);
-                mac->SetMType(LorawanMacHeader::CONFIRMED_DATA_UP);
-            }
-        }
+        simulationConfig(S_SF7, deviceTypeMap);
     }
 
     NS_LOG_DEBUG("Completed configuration");

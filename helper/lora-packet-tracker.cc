@@ -76,7 +76,11 @@ LoraPacketTracker::RequiredTransmissionsCallback(uint8_t reqTx,
                                                  uint8_t sf)
 {
     NS_LOG_INFO("Finished retransmission attempts for a packet");
-    NS_LOG_DEBUG("Packet: " << packet << "ReqTx " << unsigned(reqTx) << ", succ: " << success
+    if (packet == nullptr)
+    {
+        NS_LOG_DEBUG("PACOTE NULL");
+    }
+    NS_LOG_DEBUG("Packet: " << packet << " ReqTx " << unsigned(reqTx) << ", succ: " << success
                             << ", firstAttempt: " << firstAttempt.GetSeconds());
 
     RetransmissionStatus entry;
@@ -85,8 +89,10 @@ LoraPacketTracker::RequiredTransmissionsCallback(uint8_t reqTx,
     entry.sf = sf;
     entry.reTxAttempts = reqTx;
     entry.successful = success;
-
-    m_reTransmissionTracker.insert(std::pair<Ptr<Packet>, RetransmissionStatus>(packet, entry));
+    if (packet != nullptr)
+    {
+        m_reTransmissionTracker.insert(std::pair<Ptr<Packet>, RetransmissionStatus>(packet, entry));
+    }
 }
 
 void
@@ -534,7 +540,7 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime,
             else
             {
                 packetCopy = (*it).first->Copy();
-                // Faça algo com packetCopy
+                NS_LOG_DEBUG("PASSOU AMEEEEEEEM");
             }
             packetCopy->RemoveHeader(mHdr);
             packetCopy->RemoveHeader(fHdr);
