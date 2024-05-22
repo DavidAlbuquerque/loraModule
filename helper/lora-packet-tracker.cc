@@ -100,8 +100,8 @@ LoraPacketTracker::MacGwReceptionCallback(Ptr<const Packet> packet)
 {
     if (IsUplink(packet))
     {
-        NS_LOG_INFO("A packet was successfully received"
-                    << " at the MAC layer of gateway " << Simulator::GetContext());
+        NS_LOG_INFO("A packet was successfully received" << " at the MAC layer of gateway "
+                                                         << Simulator::GetContext());
 
         // Find the received packet in the m_macPacketTracker
         auto it = m_macPacketTracker.find(packet);
@@ -420,11 +420,8 @@ LoraPacketTracker::CountMacPacketsGlobally(Time startTime,
     NS_LOG_FUNCTION(this << startTime << stopTime);
     double sent = 0;
     double received = 0;
-
     for (auto it = m_macPacketTracker.begin(); it != m_macPacketTracker.end(); ++it)
     {
-        // std::cout << "sf: " << (unsigned)(*it).second.sf << " sf2: " << (unsigned)sf <<
-        // std::endl;
         if ((*it).second.sf == sf)
         {
             Ptr<Packet> packetCopy = (*it).first->Copy();
@@ -446,8 +443,77 @@ LoraPacketTracker::CountMacPacketsGlobally(Time startTime,
             }
         }
     }
+
     return std::to_string(sent) + " " + std::to_string(received);
 }
+
+std::string
+LoraPacketTracker::AvgPacketTimeOnAir(Time startTime, Time stopTime, uint8_t sf)
+{
+    NS_LOG_FUNCTION(this << startTime << stopTime);
+    double timeOnAir = 0, avgTimeOnAir = 0;
+    int count = 0;
+
+    for (auto it = m_macPacketTracker.begin(); it != m_macPacketTracker.end(); ++it)
+    {
+        if ((*it).second.sf == sf)
+        {
+            if ((*it).second.sendTime >= startTime && (*it).second.sendTime <= stopTime)
+            {
+                if ((*it).second.receptionTimes.size())
+                {
+                    timeOnAir = (*it).second.receivedTime.GetSeconds() -
+                                (*it).second.sendTime.GetSeconds();
+                    count++;
+                }
+            }
+        }
+        avgTimeOnAir += timeOnAir;
+    }
+
+    return std::to_string(avgTimeOnAir / count);
+}
+
+std::string
+LoraPacketTracker::AvgPacketTimeOnAir(Time startTime,
+                                      Time stopTime,
+                                      uint8_t sf,
+                                      std::map<LoraDeviceAddress, deviceFCtn> mapDevices)
+{
+    NS_LOG_FUNCTION(this << startTime << stopTime);
+    Time timeOnAir = Seconds(0);
+    double avgTimeOnAir = 0;
+    int count = 0;
+
+    for (auto it = m_macPacketTracker.begin(); it != m_macPacketTracker.end(); ++it)
+    {
+        if ((*it).second.sf == sf)
+        {
+            Ptr<Packet> packetCopy = (*it).first->Copy();
+            LorawanMacHeader mHdr;
+            LoraFrameHeader fHdr;
+            packetCopy->RemoveHeader(mHdr);
+            packetCopy->RemoveHeader(fHdr);
+            LoraDeviceAddress address = fHdr.GetAddress();
+            if (mapDevices.find(address) != mapDevices.end())
+            {
+                if ((*it).second.sendTime >= startTime && (*it).second.sendTime <= stopTime)
+                {
+                    if ((*it).second.receptionTimes.size())
+                    {
+                        timeOnAir += (*it).second.receivedTime -
+                                    (*it).second.sendTime;
+                        count++;
+                    }
+                }
+            }
+        }  
+    }
+    avgTimeOnAir = (timeOnAir / count).GetSeconds();
+    return std::to_string(avgTimeOnAir);
+}
+
+
 
 std::string
 LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime, Time stopTime)
@@ -523,10 +589,8 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime,
     double sent = 0;
     double received = 0;
     std::vector<double> rtxCounts(4, 0);
-    int contagem = 0;
     for (auto it = m_reTransmissionTracker.begin(); it != m_reTransmissionTracker.end(); ++it)
     {
-        NS_LOG_DEBUG("Contagem: " << contagem);
         if ((*it).second.sf == sf)
         {
             LorawanMacHeader mHdr;
@@ -535,12 +599,10 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime,
             if ((*it).first == nullptr)
             {
                 NS_LOG_DEBUG(static_cast<int>((*it).second.sf));
-                NS_LOG_DEBUG("AAAAAAAAAAAAAAAAAAAAAAAAAA ESSA PORRA TA NULLPTR PQ???????");
             }
             else
             {
                 packetCopy = (*it).first->Copy();
-                NS_LOG_DEBUG("PASSOU AMEEEEEEEM");
             }
             packetCopy->RemoveHeader(mHdr);
             packetCopy->RemoveHeader(fHdr);
@@ -566,7 +628,6 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime,
                 }
             }
         }
-        contagem++;
     }
     std::string output("");
     for (int i = 0; i < 4; i++)
@@ -576,51 +637,7 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime,
     return output;
 }
 
-std::string
-LoraPacketTracker::CountMacPacketsGloballyDelay(Time startTime,
-                                                Time stopTime,
-                                                uint32_t gwId,
-                                                uint32_t gwNum)
-{
-    Time delaySum = Seconds(0);
-    double avgDelay = 0;
-    int packetsOutsideTransient = 0;
-
-    for (uint32_t i = gwId; i < (gwId + gwNum); i++)
-    {
-        for (auto itMac = m_macPacketTracker.begin(); itMac != m_macPacketTracker.end(); ++itMac)
-        {
-            NS_LOG_DEBUG("Dealing with packet " << (*itMac).first);
-
-            if ((*itMac).second.sendTime > startTime && (*itMac).second.sendTime < stopTime)
-            {
-                packetsOutsideTransient++;
-
-                // Compute delays
-                /////////////////
-                if ((*itMac).second.receptionTimes.find(gwId)->second == Time::Max() ||
-                    (*itMac).second.receptionTimes.find(gwId)->second < (*itMac).second.sendTime)
-                {
-                    NS_LOG_DEBUG("Packet never received, ignoring it");
-                    packetsOutsideTransient--;
-                }
-                else
-                {
-                    delaySum += (*itMac).second.receptionTimes.find(gwId)->second -
-                                (*itMac).second.sendTime;
-                }
-            }
-        }
-    }
-    // cout << "trans: " << packetsOutsideTransient << " d: " << delaySum.GetSeconds() << endl;
-
-    if (packetsOutsideTransient != 0)
-    {
-        avgDelay = (delaySum / packetsOutsideTransient).GetSeconds();
-    }
-
-    return (std::to_string(avgDelay));
-}
+ 
 
 std::string
 LoraPacketTracker::CountMacPacketsGloballyDelay(Time startTime,

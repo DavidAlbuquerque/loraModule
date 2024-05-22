@@ -109,21 +109,31 @@ class LoraPacketTracker
     std::string PrintMacPacketsPerGw(Time startTime, Time stopTime, int systemId);
     std::string CountRetransmissions(Time startTime, Time stopTime);
     std::string CountMacPacketsGlobally(Time startTime, Time stopTime);
+
     std::string CountMacPacketsGlobally(Time startTime, Time stopTime, uint8_t sf);
     std::string CountMacPacketsGlobally(Time startTime,
                                         Time stopTime,
                                         std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
     std::string CountMacPacketsGlobally(Time startTime,
                                         Time stopTime,
                                         uint8_t sf,
                                         std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    std::string AvgPacketTimeOnAir(Time startTime, Time stopTime, uint8_t sf);
+
+    std::string AvgPacketTimeOnAir(Time startTime,
+                                   Time stopTime,
+                                   uint8_t sf,
+                                   std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
     std::string CountMacPacketsGloballyCpsr(Time startTime, Time stopTime);
+
     std::string CountMacPacketsGloballyCpsr(Time startTime, Time stopTime, uint8_t sf);
-    std::string CountMacPacketsGloballyCpsr(
-        Time startTime,
-        Time stopTime,
-        uint8_t sf,
-        std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+    std::string CountMacPacketsGloballyCpsr(Time startTime,
+                                            Time stopTime,
+                                            uint8_t sf,
+                                            std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
 
     std::string CountMacPacketsGloballyDelay(Time startTime,
                                              Time stopTime,
