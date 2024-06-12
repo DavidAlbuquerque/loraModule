@@ -163,7 +163,6 @@ LoraPhy::GetTSym (LoraTxParameters txParams)
 Time
 LoraPhy::GetOnAirTime (Ptr<Packet> packet, LoraTxParameters txParams)
 {
-
   NS_LOG_FUNCTION (packet << txParams);
 
   // The contents of this function are based on [1].

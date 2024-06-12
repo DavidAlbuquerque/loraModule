@@ -86,11 +86,11 @@ Ptr<Application> RandomSenderHelper::InstallPriv (Ptr<Node> node) const{
  	return(app);
 }
 
-void RandomSenderHelper::SetMean (int mean) {
+void RandomSenderHelper::SetMean (double mean) {
 	m_initialDelay->SetAttribute ("Mean", DoubleValue (mean));
 }
 
-void RandomSenderHelper::SetBound (int bound) {
+void RandomSenderHelper::SetBound (double bound) {
 	m_initialDelay->SetAttribute ("Bound", DoubleValue (bound));
 }
 

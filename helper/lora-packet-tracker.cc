@@ -21,10 +21,13 @@
 #include "lora-packet-tracker.h"
 
 #include "ns3/address.h"
+#include "ns3/end-device-lora-phy.h"
 #include "ns3/log.h"
 #include "ns3/lora-frame-header.h"
+#include "ns3/lora-helper.h"
 #include "ns3/lorawan-mac-header.h"
 #include "ns3/node-container.h"
+#include "ns3/pointer.h"
 #include "ns3/simulator.h"
 
 #include <fstream>
@@ -64,7 +67,11 @@ LoraPacketTracker::MacTransmissionCallback(Ptr<const Packet> packet, uint8_t sf)
         status.receivedTime = Time::Max();
         status.sf = sf;
 
-        m_macPacketTracker.insert(std::pair<Ptr<const Packet>, MacPacketStatus>(packet, status));
+        if (packet != nullptr)
+        {
+            m_macPacketTracker.insert(
+                std::pair<Ptr<const Packet>, MacPacketStatus>(packet, status));
+        }
     }
 }
 
@@ -420,6 +427,7 @@ LoraPacketTracker::CountMacPacketsGlobally(Time startTime,
     NS_LOG_FUNCTION(this << startTime << stopTime);
     double sent = 0;
     double received = 0;
+
     for (auto it = m_macPacketTracker.begin(); it != m_macPacketTracker.end(); ++it)
     {
         if ((*it).second.sf == sf)
@@ -448,30 +456,64 @@ LoraPacketTracker::CountMacPacketsGlobally(Time startTime,
 }
 
 std::string
-LoraPacketTracker::AvgPacketTimeOnAir(Time startTime, Time stopTime, uint8_t sf)
+LoraPacketTracker::AvgPacketTimeOnAir(Time startTime,
+                                      Time stopTime,
+                                      uint32_t gwId,
+                                      uint32_t gwNum,
+                                      uint8_t sf)
 {
     NS_LOG_FUNCTION(this << startTime << stopTime);
-    double timeOnAir = 0, avgTimeOnAir = 0;
-    int count = 0;
+    Time timeOnAir = Seconds(0);
+    std::map<double, int> timeOnAirFrequency;
+    LoraTxParameters params;
 
-    for (auto it = m_macPacketTracker.begin(); it != m_macPacketTracker.end(); ++it)
+    for (uint32_t i = gwId; i < (gwId + gwNum); i++)
     {
-        if ((*it).second.sf == sf)
+        for (auto it = m_macPacketTracker.begin(); it != m_macPacketTracker.end(); ++it)
         {
-            if ((*it).second.sendTime >= startTime && (*it).second.sendTime <= stopTime)
+            if ((*it).second.sf == sf)
             {
-                if ((*it).second.receptionTimes.size())
+                if ((*it).second.sendTime >= startTime && (*it).second.sendTime <= stopTime)
                 {
-                    timeOnAir = (*it).second.receivedTime.GetSeconds() -
-                                (*it).second.sendTime.GetSeconds();
-                    count++;
+                    if ((*it).second.receptionTimes.size())
+                    {
+                        if ((*it).second.receptionTimes.find(i) !=
+                            (*it).second.receptionTimes.end())
+                        {
+                            timeOnAir = LoraPhy::GetOnAirTime((*it).first->Copy(), params);
+                            double timeOnAirSeconds = timeOnAir.GetSeconds();
+
+                            // Incrementa a frequência do tempo no ar
+                            if (timeOnAirFrequency.find(timeOnAirSeconds) ==
+                                timeOnAirFrequency.end())
+                            {
+                                timeOnAirFrequency[timeOnAirSeconds] = 1;
+                            }
+                            else
+                            {
+                                timeOnAirFrequency[timeOnAirSeconds]++;
+                            }
+                        }
+                    }
                 }
             }
         }
-        avgTimeOnAir += timeOnAir;
     }
 
-    return std::to_string(avgTimeOnAir / count);
+    // Calcula a média ponderada
+    double totalWeightedTimeOnAir = 0;
+    int totalWeight = 0;
+    for (const auto& pair : timeOnAirFrequency)
+    {
+        double timeOnAir = pair.first;
+        int weight = pair.second;
+        totalWeightedTimeOnAir += timeOnAir * weight;
+        totalWeight += weight;
+    }
+
+    double avgTimeOnAir = totalWeightedTimeOnAir / totalWeight;
+
+    return std::to_string(avgTimeOnAir);
 }
 
 std::string
@@ -501,19 +543,87 @@ LoraPacketTracker::AvgPacketTimeOnAir(Time startTime,
                 {
                     if ((*it).second.receptionTimes.size())
                     {
-                        timeOnAir += (*it).second.receivedTime -
-                                    (*it).second.sendTime;
+                        timeOnAir += (*it).second.receivedTime - (*it).second.sendTime;
                         count++;
                     }
                 }
             }
-        }  
+        }
     }
     avgTimeOnAir = (timeOnAir / count).GetSeconds();
     return std::to_string(avgTimeOnAir);
 }
 
+std::string
+LoraPacketTracker::AvgPacketTimeOnAir(Time startTime,
+                                      Time stopTime,
+                                      uint32_t gwId,
+                                      uint32_t gwNum,
+                                      uint8_t sf,
+                                      std::map<LoraDeviceAddress, deviceFCtn> mapDevices)
+{
+    Time timeOnAir = Seconds(0);
+    std::map<double, int> timeOnAirFrequency;
+    LoraTxParameters params;
 
+    for (uint32_t i = gwId; i < (gwId + gwNum); i++)
+    {
+        // std::map<ns3::Ptr<ns3::Node>, deviceType>::iterator j = deviceTypeMap.begin();
+
+        for (auto itMac = m_macPacketTracker.begin(); itMac != m_macPacketTracker.end(); ++itMac)
+        {
+            if ((*itMac).second.sf == sf)
+            {
+                params.sf = sf;
+                Ptr<Packet> packetCopy =
+                    (*itMac).first->Copy(); // Crie uma cópia não-constante do pacote
+                LorawanMacHeader mHdr;
+                LoraFrameHeader fHdr;
+                packetCopy->RemoveHeader(mHdr);
+                packetCopy->RemoveHeader(fHdr);
+                LoraDeviceAddress address = fHdr.GetAddress();
+                if (mapDevices.find(address) != mapDevices.end())
+                {
+                    if ((*itMac).second.sendTime > startTime && (*itMac).second.sendTime < stopTime)
+                    {
+                        if ((*itMac).second.receptionTimes.find(i) !=
+                            (*itMac).second.receptionTimes.end())
+                        {
+                            timeOnAir = LoraPhy::GetOnAirTime((*itMac).first->Copy(), params);
+                            double timeOnAirSeconds = timeOnAir.GetSeconds();
+
+                            // Incrementa a frequência do tempo no ar
+                            if (timeOnAirFrequency.find(timeOnAirSeconds) ==
+                                timeOnAirFrequency.end())
+                            {
+                                timeOnAirFrequency[timeOnAirSeconds] = 1;
+                            }
+                            else
+                            {
+                                timeOnAirFrequency[timeOnAirSeconds]++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Calcula a média ponderada
+    double totalWeightedTimeOnAir = 0;
+    int totalWeight = 0;
+    for (const auto& pair : timeOnAirFrequency)
+    {
+        double timeOnAir = pair.first;
+        int weight = pair.second;
+        totalWeightedTimeOnAir += timeOnAir * weight;
+        totalWeight += weight;
+    }
+
+    double avgTimeOnAir = totalWeightedTimeOnAir / totalWeight;
+
+    return std::to_string(avgTimeOnAir);
+}
 
 std::string
 LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime, Time stopTime)
@@ -637,8 +747,6 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime,
     return output;
 }
 
- 
-
 std::string
 LoraPacketTracker::CountMacPacketsGloballyDelay(Time startTime,
                                                 Time stopTime,
@@ -675,6 +783,52 @@ LoraPacketTracker::CountMacPacketsGloballyDelay(Time startTime,
                         delaySum += (*itMac).second.receptionTimes.find(gwId)->second -
                                     (*itMac).second.sendTime;
                     }
+                }
+            }
+        }
+    }
+    // cout << "trans: " << packetsOutsideTransient << " d: " << delaySum.GetSeconds() << endl;
+
+    if (packetsOutsideTransient != 0)
+    {
+        avgDelay = (delaySum / packetsOutsideTransient).GetSeconds();
+    }
+
+    return (std::to_string(avgDelay));
+}
+
+std::string
+LoraPacketTracker::CountMacPacketsGloballyDelay(Time startTime,
+                                                Time stopTime,
+                                                uint32_t gwId,
+                                                uint32_t gwNum)
+{
+    Time delaySum = Seconds(0);
+    double avgDelay = 0;
+    int packetsOutsideTransient = 0;
+
+    for (uint32_t i = gwId; i < (gwId + gwNum); i++)
+    {
+        for (auto itMac = m_macPacketTracker.begin(); itMac != m_macPacketTracker.end(); ++itMac)
+        {
+            // NS_LOG_DEBUG ("Dealing with packet " << (*itMac).first);
+
+            if ((*itMac).second.sendTime > startTime && (*itMac).second.sendTime < stopTime)
+            {
+                packetsOutsideTransient++;
+
+                // Compute delays
+                /////////////////
+                if ((*itMac).second.receptionTimes.find(gwId)->second == Time::Max() ||
+                    (*itMac).second.receptionTimes.find(gwId)->second < (*itMac).second.sendTime)
+                {
+                    // NS_LOG_DEBUG ("Packet never received, ignoring it");
+                    packetsOutsideTransient--;
+                }
+                else
+                {
+                    delaySum += (*itMac).second.receptionTimes.find(gwId)->second -
+                                (*itMac).second.sendTime;
                 }
             }
         }

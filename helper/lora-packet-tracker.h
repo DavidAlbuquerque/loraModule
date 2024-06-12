@@ -21,7 +21,9 @@
 #ifndef LORA_PACKET_TRACKER_H
 #define LORA_PACKET_TRACKER_H
 
+#include "ns3/end-device-lora-phy.h"
 #include "ns3/lora-device-address.h"
+#include "ns3/node-container.h"
 #include "ns3/nstime.h"
 #include "ns3/packet.h"
 
@@ -55,6 +57,13 @@ struct deviceFCtn
 {
     uint16_t id;
     uint16_t FCtn = 0;
+};
+
+enum deviceType
+{
+    ALARM_DEVICE = 0,
+    REGULAR_DEVICE,
+    ALL
 };
 
 struct MacPacketStatus
@@ -120,10 +129,21 @@ class LoraPacketTracker
                                         uint8_t sf,
                                         std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
 
-    std::string AvgPacketTimeOnAir(Time startTime, Time stopTime, uint8_t sf);
+    std::string AvgPacketTimeOnAir(Time startTime,
+                                   Time stopTime,
+                                   uint32_t gwId,
+                                   uint32_t gwNum,
+                                   uint8_t sf);
 
     std::string AvgPacketTimeOnAir(Time startTime,
                                    Time stopTime,
+                                   uint8_t sf,
+                                   std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    std::string AvgPacketTimeOnAir(Time startTime,
+                                   Time stopTime,
+                                   uint32_t gwId,
+                                   uint32_t gwNum,
                                    uint8_t sf,
                                    std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
 
@@ -139,16 +159,19 @@ class LoraPacketTracker
                                              Time stopTime,
                                              uint32_t gwId,
                                              uint32_t gwNum);
+
     std::string CountMacPacketsGloballyDelay(Time startTime,
                                              Time stopTime,
                                              uint32_t gwId,
                                              uint32_t gwNum,
                                              uint8_t sf);
+
     std::string CountMacPacketsGloballyDelay(Time startTime,
                                              Time stopTime,
                                              uint32_t gwId,
                                              uint32_t gwNum,
                                              std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
     std::string CountMacPacketsGloballyDelay(Time startTime,
                                              Time stopTime,
                                              uint32_t gwId,

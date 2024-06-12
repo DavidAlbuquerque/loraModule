@@ -56,9 +56,9 @@ public:
    	*
    	* \param period The period to set
    	*/
-  	void SetMean (int mean);
+  	void SetMean (double mean);
 
- 	void SetBound (int bound);
+ 	void SetBound (double bound);
 
 	void SetPacketSize (uint8_t size);
 

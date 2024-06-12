@@ -650,6 +650,50 @@ LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
 } //  end function
 
 std::vector<uint16_t>
+LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
+                                        NodeContainer gateways,
+                                        Ptr<LoraChannel> channel,
+                                        bool enableRTX,
+                                        uint8_t desiredSf)
+{
+    NS_LOG_FUNCTION_NOARGS();
+
+    std::vector<uint16_t> sfQuantity(1, 0); // Atualize para apenas um valor, pois estamos usando apenas um SF
+
+    for (NodeContainer::Iterator j = endDevices.Begin(); j != endDevices.End(); ++j)
+    {
+        Ptr<Node> object = *j;
+        Ptr<MobilityModel> position = object->GetObject<MobilityModel>();
+        NS_ASSERT(position != NULL);
+
+        Ptr<NetDevice> netDevice = object->GetDevice(0);
+        Ptr<LoraNetDevice> loraNetDevice = netDevice->GetObject<LoraNetDevice>();
+        NS_ASSERT(loraNetDevice != NULL);
+
+        Ptr<ClassAEndDeviceLorawanMac> mac =
+            loraNetDevice->GetMac()->GetObject<ClassAEndDeviceLorawanMac>();
+        NS_ASSERT(mac != NULL);
+
+        Ptr<LoraPhy> phy = loraNetDevice->GetPhy();
+        NS_ASSERT(phy != NULL);
+
+        Ptr<EndDeviceLoraPhy> endDeviceLoraPhy = phy->GetObject<EndDeviceLoraPhy>();
+        NS_ASSERT(endDeviceLoraPhy != NULL);
+
+        // Configura todos os dispositivos para usar o SF desejado
+        uint8_t dataRate = 12 - desiredSf; // Calcula a taxa de dados a partir do SF (SF7 = DR5, SF8 = DR4, etc.)
+        mac->SetDataRate(dataRate);
+        sfQuantity[0] = sfQuantity[0] + 1;
+        endDeviceLoraPhy->SetSpreadingFactor(desiredSf);
+
+        NS_LOG_DEBUG("Configurado para SF" << static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()));
+    }
+
+    return sfQuantity;
+}
+
+
+std::vector<uint16_t>
 LorawanMacHelper::SetSpreadingFactorsEIB(NodeContainer endDevices, double rad)
 {
     NS_LOG_FUNCTION_NOARGS();

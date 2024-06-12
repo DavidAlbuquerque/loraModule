@@ -176,37 +176,37 @@ private:
    */
   Time m_receiveDelay2;
 
-  /**
-   * The event of the closing the first receive window.
-   *
-   * This Event will be canceled if there's a successful reception of a packet.
-   */
-  EventId m_closeFirstWindow;
+    /**
+     * The event of the closing the first receive window.
+     *
+     * This Event will be canceled if there's a successful reception of a packet.
+     */
+    EventId m_closeFirstWindow;
 
-  /**
-   * The event of the closing the second receive window.
-   *
-   * This Event will be canceled if there's a successful reception of a packet.
-   */
-  EventId m_closeSecondWindow;
+    /**
+     * The event of the closing the second receive window.
+     *
+     * This Event will be canceled if there's a successful reception of a packet.
+     */
+    EventId m_closeSecondWindow;
 
-  /**
-   * The event of the second receive window opening.
-   *
-   * This Event is used to cancel the second window in case the first one is
-   * successful.
-   */
-  EventId m_secondReceiveWindow;
+    /**
+     * The event of the second receive window opening.
+     *
+     * This Event is used to cancel the second window in case the first one is
+     * successful.
+     */
+    EventId m_secondReceiveWindow;
 
-  /**
-   * The frequency to listen on for the second receive window.
-   */
-  double m_secondReceiveWindowFrequency;
+    /**
+     * The frequency to listen on for the second receive window.
+     */
+    double m_secondReceiveWindowFrequency;
 
-  /**
-   * The Data Rate to listen for during the second downlink transmission.
-   */
-  uint8_t m_secondReceiveWindowDataRate;
+    /**
+     * The Data Rate to listen for during the second downlink transmission.
+     */
+    uint8_t m_secondReceiveWindowDataRate;
 
   /**
    * The RX1DROffset parameter value

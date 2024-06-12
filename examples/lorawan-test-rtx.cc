@@ -30,6 +30,7 @@
 #include "ns3/gateway-lorawan-mac.h"
 #include "ns3/log.h"
 #include "ns3/lora-helper.h"
+#include "ns3/lora-packet-tracker.h"
 #include "ns3/mobility-helper.h"
 #include "ns3/network-server-helper.h"
 #include "ns3/node-container.h"
@@ -68,13 +69,17 @@ uint8_t trial = 1, numClass = 0; //, nCount=0, nClass1=0, nClass2=0, nClass3=0;
 vector<uint16_t> sfQuantAlarm(6, 0);
 vector<uint16_t> sfQuantRegular(6, 0);
 vector<uint16_t> sfQuantAll(6, 0);
+/* std::vector<uint16_t> sfQuantAll(1, 0); */
 vector<double> rtxQuant(4, 0);
 std::map<LoraDeviceAddress, deviceFCtn> mapEndAlarm, mapEndRegular;
+std::map<ns3::Ptr<ns3::Node>, deviceType> deviceTypeMap;
+std::map<LoraDeviceAddress, Ptr<EndDeviceLoraPhy>> devicePhyMapRegular, devicePhyMapAlarm;
 uint16_t nDevicesAlarm;
+
 uint16_t nDevicesRegular;
 
 // Metrics
-double packLoss = 0, sent = 0, received = 0, avgDelay = 0;
+double packLoss = 0, sent = 0, received = 0, avgDelay = 0, avgTimeOnAir = 0;
 double angle = 0, sAngle = M_PI; //, radius1=4200; //, radius2=4900;
 double throughput = 0, probSucc = 0, probLoss = 0;
 
@@ -113,13 +118,6 @@ enum simulationType
     S_ALARM_SF7
 };
 
-enum deviceType
-{
-    ALARM_DEVICE = 0,
-    REGULAR_DEVICE,
-    ALL
-};
-
 void
 simulationConfig(simulationType type, std::map<ns3::Ptr<ns3::Node>, deviceType> deviceTypeMap)
 {
@@ -145,11 +143,22 @@ simulationConfig(simulationType type, std::map<ns3::Ptr<ns3::Node>, deviceType> 
             break;
 
         case S_REGULARES_SF7:
-            isRtx = j->second == REGULAR_DEVICE;
+
+            if (j->second == REGULAR_DEVICE &&
+                static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()) == 7)
+            {
+                isRtx = true;
+            }
+
             break;
 
         case S_ALARM_SF7:
-            isRtx = j->second == ALARM_DEVICE;
+
+            if (j->second == ALARM_DEVICE &&
+                static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()) == 7)
+            {
+                isRtx = true;
+            }
             break;
 
         default:
@@ -158,9 +167,8 @@ simulationConfig(simulationType type, std::map<ns3::Ptr<ns3::Node>, deviceType> 
 
         if (isRtx)
         {
-            NS_LOG_DEBUG("RTX --> "
-                         << "device: " << j->second
-                         << " SF: " << static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()));
+            NS_LOG_DEBUG("RTX --> " << "device: " << j->second << " SF: "
+                                    << static_cast<int>(endDeviceLoraPhy->GetSpreadingFactor()));
 
             Ptr<EndDeviceLorawanMac> mac =
                 loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
@@ -221,13 +229,12 @@ metricsResultFile(LoraPacketTracker& tracker,
     NS_LOG_INFO(endl << "//////////////////////////////////////////////");
     NS_LOG_INFO("//  METRICS FOR " << deviceMetric << " DEVICES  //");
     NS_LOG_INFO("//////////////////////////////////////////////" << endl);
-    NS_LOG_INFO("SF Allocation " << deviceMetric << " Devices: 6 -> "
-                                 << "SF7=" << (unsigned)sfQuant.at(0) << " SF8="
-                                 << (unsigned)sfQuant.at(1) << " SF9=" << (unsigned)sfQuant.at(2)
-                                 << " SF10=" << (unsigned)sfQuant.at(3) << " SF11="
-                                 << (unsigned)sfQuant.at(4) << " SF12=" << (unsigned)sfQuant.at(5));
+    NS_LOG_INFO("SF Allocation " << deviceMetric << " Devices: 6 -> " << "SF7="
+                                 << (unsigned)sfQuant.at(0) << " SF8=" << (unsigned)sfQuant.at(1)
+                                 << " SF9=" << (unsigned)sfQuant.at(2) << " SF10="
+                                 << (unsigned)sfQuant.at(3) << " SF11=" << (unsigned)sfQuant.at(4)
+                                 << " SF12=" << (unsigned)sfQuant.at(5));
 
-    int countSF = 0;
     for (uint8_t i = SF7; i <= SF12; i++)
     {
         if (sfQuant.at(i - SF7))
@@ -248,6 +255,13 @@ metricsResultFile(LoraPacketTracker& tracker,
                                                                   (unsigned)nGateways,
                                                                   i)) >>
                     avgDelay;
+
+                stringstream(tracker.AvgPacketTimeOnAir(Seconds(0),
+                                                        appStopTime + Hours(1),
+                                                        (unsigned)nDevicesTotally,
+                                                        (unsigned)nGateways,
+                                                        i)) >>
+                    avgTimeOnAir;
             }
             else
             {
@@ -256,6 +270,7 @@ metricsResultFile(LoraPacketTracker& tracker,
                                                              i,
                                                              mapDevices)) >>
                     sent >> received;
+
                 stringstream(tracker.CountMacPacketsGloballyDelay(Seconds(0),
                                                                   appStopTime + Hours(1),
                                                                   (unsigned)nDevicesTotally,
@@ -263,6 +278,14 @@ metricsResultFile(LoraPacketTracker& tracker,
                                                                   i,
                                                                   mapDevices)) >>
                     avgDelay;
+
+                stringstream(tracker.AvgPacketTimeOnAir(Seconds(0),
+                                                        appStopTime + Hours(1),
+                                                        (unsigned)nDevicesTotally,
+                                                        (unsigned)nGateways,
+                                                        i,
+                                                        mapDevices)) >>
+                    avgTimeOnAir;
             }
 
             packLoss = sent - received;
@@ -272,22 +295,16 @@ metricsResultFile(LoraPacketTracker& tracker,
             probLoss = packLoss / sent;
 
             NS_LOG_INFO("----------------------------------------------------------------");
-            NS_LOG_INFO("nDevices"
-                        << "  |  "
-                        << "throughput"
-                        << "  |  "
-                        << "probSucc"
-                        << "  |  "
-                        << "probLoss"
-                        << "  |  "
-                        << "avgDelay");
+            NS_LOG_INFO("nDevices" << "  |  " << "throughput" << "  |  " << "probSucc" << "  |  "
+                                   << "probLoss" << "  |  " << "avgDelay" << "  |  "
+                                   << "avgTimeOnAir");
             NS_LOG_INFO(nDevices << "       |  " << throughput << "    |  " << probSucc << "   |  "
-                                 << probLoss << "   |  " << avgDelay);
+                                 << probLoss << "   |  " << avgDelay << "   |  " << avgTimeOnAir);
             NS_LOG_INFO("----------------------------------------------------------------" << endl);
 
             myfile.open(fileMetric + "-SF" + to_string(i) + ".dat", ios::out | ios::app);
             myfile << nDevices << ", " << throughput << ", " << probSucc << ", " << probLoss << ", "
-                   << avgDelay << "\n";
+                   << avgDelay << ", " << avgTimeOnAir << "\n";
             myfile.close();
 
             if (flagRtx && deviceMetric != "all devices")
@@ -305,7 +322,6 @@ metricsResultFile(LoraPacketTracker& tracker,
                 stringstream(
                     tracker.CountMacPacketsGloballyCpsr(Seconds(0), appStopTime + Hours(2), i)) >>
                     rtxQuant.at(0) >> rtxQuant.at(1) >> rtxQuant.at(2) >> rtxQuant.at(3);
-                // writeRTXMetrics(myfile, fileMetric, i, nDevices, sent, rtxQuant);
             }
 
             sort(rtxQuant.begin(), rtxQuant.end(), greater<double>());
@@ -328,8 +344,7 @@ metricsResultFile(LoraPacketTracker& tracker,
 
             myfile.open(fileData, ios::out | ios::app);
             myfile << "sent: " << sent << " succ: " << received << " drop: " << packLoss << "\n";
-            myfile << ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
-                   << "\n";
+            myfile << ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" << "\n";
             myfile << "numDev: " << nDevices << " numGat: " << nGateways
                    << " simTime: " << simulationTime << " throughput: " << throughput << "\n";
             myfile << "##################################################################"
@@ -344,11 +359,6 @@ metricsResultFile(LoraPacketTracker& tracker,
             NS_LOG_INFO("//////////////////////////////////////////////" << endl);
             NS_LOG_INFO("##################################################################\n");
         }
-
-        NS_LOG_DEBUG("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-                     "AAAAAAAAAAAAAAAAAAA -> "
-                     << countSF);
-        countSF++;
     }
 
     NS_LOG_INFO(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
@@ -794,34 +804,34 @@ main(int argc, char* argv[])
     // Set up logging
     LogComponentEnable("LorawanTestSimulatorRTX", LOG_LEVEL_ALL);
     // LogComponentEnable("LoraPacketTracker", LOG_LEVEL_ALL);
-    //  LogComponentEnable("LoraChannel", LOG_LEVEL_INFO);
-    //  LogComponentEnable("LoraPhy", LOG_LEVEL_ALL);
-    //  LogComponentEnable("EndDeviceLoraPhy", LOG_LEVEL_ALL);
-    //  LogComponentEnable("SimpleEndDeviceLoraPhy", LOG_LEVEL_ALL);
-    //  LogComponentEnable("GatewayLoraPhy", LOG_LEVEL_ALL);
-    //  LogComponentEnable("SimpleGatewayLoraPhy", LOG_LEVEL_ALL);
-    //  LogComponentEnable("LoraInterferenceHelper", LOG_LEVEL_ALL);
-    //  LogComponentEnable("LorawanMac", LOG_LEVEL_ALL);
-    //  LogComponentEnable("EndDeviceLorawanMac", LOG_LEVEL_ALL);
-    //  LogComponentEnable("EndDeviceStatus", LOG_LEVEL_ALL);
-    //  LogComponentEnable("ClassAEndDeviceLorawanMac", LOG_LEVEL_ALL);
-    //  LogComponentEnable("GatewayLorawanMac", LOG_LEVEL_ALL);
-    //  LogComponentEnable("LogicalLoraChannelHelper", LOG_LEVEL_ALL);
-    //  LogComponentEnable("LogicalLoraChannel", LOG_LEVEL_ALL);
-    // LogComponentEnable("LoraHelper", LOG_LEVEL_ALL);
-    //  LogComponentEnable("LoraPhyHelper", LOG_LEVEL_ALL);
-    //  LogComponentEnable("LorawanMacHelper", LOG_LEVEL_ALL);
-    //  LogComponentEnable("PeriodicSenderHelper", LOG_LEVEL_ALL);
-    //  LogComponentEnable("PeriodicSender", LOG_LEVEL_ALL);
-    //  LogComponentEnable("RandomSenderHelper", LOG_LEVEL_ALL);
-    //  LogComponentEnable("MobilityHelper", LOG_LEVEL_ALL);
-    //  LogComponentEnable("RandomSender", LOG_LEVEL_ALL);
-    //  LogComponentEnable("LorawanMacHeader", LOG_LEVEL_ALL);
-    //  LogComponentEnable("LoraFrameHeader", LOG_LEVEL_ALL);
-    //  LogComponentEnable("NetworkScheduler", LOG_LEVEL_ALL);
-    //  LogComponentEnable("NetworkServer", LOG_LEVEL_ALL);
-    //  LogComponentEnable("NetworkStatus", LOG_LEVEL_ALL);
-    //  LogComponentEnable("NetworkController", LOG_LEVEL_ALL);
+    //   LogComponentEnable("LoraChannel", LOG_LEVEL_INFO);
+    //   LogComponentEnable("LoraPhy", LOG_LEVEL_ALL);
+    //   LogComponentEnable("EndDeviceLoraPhy", LOG_LEVEL_ALL);
+    //   LogComponentEnable("SimpleEndDeviceLoraPhy", LOG_LEVEL_ALL);
+    //   LogComponentEnable("GatewayLoraPhy", LOG_LEVEL_ALL);
+    //   LogComponentEnable("SimpleGatewayLoraPhy", LOG_LEVEL_ALL);
+    //   LogComponentEnable("LoraInterferenceHelper", LOG_LEVEL_ALL);
+    //   LogComponentEnable("LorawanMac", LOG_LEVEL_ALL);
+    //   LogComponentEnable("EndDeviceLorawanMac", LOG_LEVEL_ALL);
+    //   LogComponentEnable("EndDeviceStatus", LOG_LEVEL_ALL);
+    //   LogComponentEnable("ClassAEndDeviceLorawanMac", LOG_LEVEL_ALL);
+    //   LogComponentEnable("GatewayLorawanMac", LOG_LEVEL_ALL);
+    //   LogComponentEnable("LogicalLoraChannelHelper", LOG_LEVEL_ALL);
+    //   LogComponentEnable("LogicalLoraChannel", LOG_LEVEL_ALL);
+    //  LogComponentEnable("LoraHelper", LOG_LEVEL_ALL);
+    //   LogComponentEnable("LoraPhyHelper", LOG_LEVEL_ALL);
+    //   LogComponentEnable("LorawanMacHelper", LOG_LEVEL_ALL);
+    //   LogComponentEnable("PeriodicSenderHelper", LOG_LEVEL_ALL);
+    //   LogComponentEnable("PeriodicSender", LOG_LEVEL_ALL);
+    //   LogComponentEnable("RandomSenderHelper", LOG_LEVEL_ALL);
+    //   LogComponentEnable("MobilityHelper", LOG_LEVEL_ALL);
+    //   LogComponentEnable("RandomSender", LOG_LEVEL_ALL);
+    //   LogComponentEnable("LorawanMacHeader", LOG_LEVEL_ALL);
+    //   LogComponentEnable("LoraFrameHeader", LOG_LEVEL_ALL);
+    //   LogComponentEnable("NetworkScheduler", LOG_LEVEL_ALL);
+    //   LogComponentEnable("NetworkServer", LOG_LEVEL_ALL);
+    //   LogComponentEnable("NetworkStatus", LOG_LEVEL_ALL);
+    //   LogComponentEnable("NetworkController", LOG_LEVEL_ALL);
 
     /***********
      *  Setup  *
@@ -897,6 +907,8 @@ main(int argc, char* argv[])
 
     // Create the PeriodicSenderHelper
     PeriodicSenderHelper periodicHelper = PeriodicSenderHelper();
+    PeriodicSenderHelper periodicHelper2 = PeriodicSenderHelper();
+
     // Create the RandomSenderHelper
     RandomSenderHelper ramdomHelper = RandomSenderHelper();
 
@@ -916,7 +928,6 @@ main(int argc, char* argv[])
 
     // Combine end devices into a single NodeContainer
     NodeContainer combinedEndDevices;
-    std::map<ns3::Ptr<ns3::Node>, deviceType> deviceTypeMap;
 
     for (NodeContainer::Iterator it = endDevicesRegular.Begin(); it != endDevicesRegular.End();
          ++it)
@@ -932,8 +943,10 @@ main(int argc, char* argv[])
     }
 
     // Installing sender type
-    ramdomHelper.Install(endDevicesAlarm);
+    // ramdomHelper.Install(endDevicesAlarm);
     periodicHelper.Install(endDevicesRegular);
+
+    periodicHelper2.Install(endDevicesAlarm);
 
     // Assign a mobility model to each node
     mobility.Install(endDevicesRegular);
@@ -972,6 +985,10 @@ main(int argc, char* argv[])
         Ptr<LoraNetDevice> loraNetDevice = node->GetDevice(0)->GetObject<LoraNetDevice>();
         Ptr<EndDeviceLorawanMac> mac = loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
         mapEndRegular[mac->GetDeviceAddress()] = deviceFCtn{(uint16_t)node->GetId(), 0};
+
+        Ptr<LoraPhy> phy = loraNetDevice->GetPhy();
+        Ptr<EndDeviceLoraPhy> endDeviceLoraPhy = phy->GetObject<EndDeviceLoraPhy>();
+        devicePhyMapRegular[mac->GetDeviceAddress()] = endDeviceLoraPhy;
     }
 
     for (NodeContainer::Iterator j = endDevicesAlarm.Begin(); j != endDevicesAlarm.End(); ++j)
@@ -980,6 +997,10 @@ main(int argc, char* argv[])
         Ptr<LoraNetDevice> loraNetDevice = node->GetDevice(0)->GetObject<LoraNetDevice>();
         Ptr<EndDeviceLorawanMac> mac = loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
         mapEndAlarm[mac->GetDeviceAddress()] = deviceFCtn{(uint16_t)node->GetId(), 0};
+
+        Ptr<LoraPhy> phy = loraNetDevice->GetPhy();
+        Ptr<EndDeviceLoraPhy> endDeviceLoraPhy = phy->GetObject<EndDeviceLoraPhy>();
+        devicePhyMapAlarm[mac->GetDeviceAddress()] = endDeviceLoraPhy;
     }
 
     if (connectTraceSoucer)
@@ -1048,6 +1069,11 @@ main(int argc, char* argv[])
 
     sfQuantRegular = macHelper.SetSpreadingFactorsUp(endDevicesRegular, gateways, channel, flagRtx);
     sfQuantAlarm = macHelper.SetSpreadingFactorsUp(endDevicesAlarm, gateways, channel, flagRtx);
+    /* sfQuantRegular =
+        macHelper.SetSpreadingFactorsUp(endDevicesRegular, gateways, channel, flagRtx, 7);
+    sfQuantAlarm = macHelper.SetSpreadingFactorsUp(endDevicesAlarm, gateways, channel, flagRtx, 7);
+  */
+
     // sfQuant = macHelper.SetSpreadingFactorsEIB (endDevices, radius);
     // sfQuant = macHelper.SetSpreadingFactorsEAB (endDevices, radius);
     // sfQuant = macHelper.SetSpreadingFactorsProp (endDevices, 0.4, 0, radius);
@@ -1063,12 +1089,45 @@ main(int argc, char* argv[])
     for (uint16_t i = 0; i < sfQuantAll.size(); i++)
         sfQuantAll.at(i) = sfQuantAlarm.at(i) + sfQuantRegular.at(i);
 
+    /* for (uint16_t i = 0; i < sfQuantRegular.size(); i++)
+    {
+        if (sfQuantRegular.at(i))
+        {
+            numClass++;
+        }
+    }
+
+    for (uint16_t i = 0; i < sfQuantAlarm.size(); i++)
+    {
+        if (sfQuantAlarm.at(i))
+        {
+            numClass++;
+        }
+    }
+
+    for (uint16_t i = 0; i < sfQuantAll.size(); i++)
+    {
+        if (i < sfQuantAlarm.size() && i < sfQuantRegular.size())
+        {
+            sfQuantAll.at(i) = sfQuantAlarm.at(i) + sfQuantRegular.at(i);
+        }
+        else if (i < sfQuantAlarm.size())
+        {
+            sfQuantAll.at(i) = sfQuantAlarm.at(i);
+        }
+        else if (i < sfQuantRegular.size())
+        {
+            sfQuantAll.at(i) = sfQuantRegular.at(i);
+        }
+    } */
+
     /*********************************************
      *  Retransmission  *
      *********************************************/
+
     if (flagRtx)
     {
-        simulationConfig(S_SF7, deviceTypeMap);
+        simulationConfig(S_ALARM_SF7, deviceTypeMap);
     }
 
     NS_LOG_DEBUG("Completed configuration");
@@ -1081,19 +1140,30 @@ main(int argc, char* argv[])
 
     periodicHelper.SetPeriod(Seconds(appPeriodSeconds));
     periodicHelper.SetPacketSize(19);
-    ApplicationContainer appContainer = periodicHelper.Install(endDevicesRegular);
+    ApplicationContainer appContainerPeriodic = periodicHelper.Install(endDevicesRegular);
 
-    ramdomHelper.SetMean(appPeriodSeconds);
-    ramdomHelper.SetBound(appPeriodSeconds);
-    ramdomHelper.SetPacketSize(19);
-    appContainer.Add(ramdomHelper.Install(endDevicesAlarm));
+    periodicHelper2.SetPeriod(Seconds(appPeriodSeconds));
+    periodicHelper2.SetPacketSize(9);
+    ApplicationContainer appContainerPeriodic2 = periodicHelper.Install(endDevicesAlarm);
 
-    appContainer.Start(Seconds(0));
-    appContainer.Stop(appStopTime);
+    appContainerPeriodic2.Start(Seconds(0));
+    appContainerPeriodic.Start(Seconds(0));
+    appContainerPeriodic2.Stop(appStopTime);
+    appContainerPeriodic.Stop(appStopTime);
+
+    /* ramdomHelper.SetMean(1);
+    ramdomHelper.SetBound(1);
+    ramdomHelper.SetPacketSize(9);
+    ApplicationContainer appContainerAlarm = ramdomHelper.Install(endDevicesAlarm); */
+
+    /* appContainerAlarm.Start(Seconds(0));
+    appContainerPeriodic.Start(Seconds(0));
+    appContainerAlarm.Stop(appStopTime);
+    appContainerPeriodic.Stop(appStopTime); */
 
     /**************************
      *  Create Network Server  *
-     ***************************/
+     ***************    ************/
 
     // Create the NS node
     NodeContainer networkServer;
