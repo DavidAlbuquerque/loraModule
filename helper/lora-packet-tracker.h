@@ -83,6 +83,7 @@ struct RetransmissionStatus
     uint8_t sf;
     uint8_t reTxAttempts;
     bool successful;
+    bool ackFirstWindown;
 };
 
 typedef std::map<Ptr<const Packet>, MacPacketStatus> MacPacketData;
@@ -107,7 +108,8 @@ class LoraPacketTracker
                                        bool success,
                                        Time firstAttempt,
                                        Ptr<Packet> packet,
-                                       uint8_t sf);
+                                       uint8_t sf,
+                                       bool ackFirstWindown);
     void MacGwReceptionCallback(Ptr<const Packet> packet);
 
     bool IsUplink(Ptr<const Packet> packet);
@@ -146,6 +148,13 @@ class LoraPacketTracker
                                    uint32_t gwNum,
                                    uint8_t sf,
                                    std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    std::string AvgPacketTimeOnAirRtx(Time startTime,
+                                      Time stopTime,
+                                      uint32_t gwId,
+                                      uint32_t gwNum,
+                                      uint8_t sf,
+                                      std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
 
     std::string CountMacPacketsGloballyCpsr(Time startTime, Time stopTime);
 

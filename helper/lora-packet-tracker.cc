@@ -80,7 +80,8 @@ LoraPacketTracker::RequiredTransmissionsCallback(uint8_t reqTx,
                                                  bool success,
                                                  Time firstAttempt,
                                                  Ptr<Packet> packet,
-                                                 uint8_t sf)
+                                                 uint8_t sf,
+                                                 bool ackFirstWindow)
 {
     NS_LOG_INFO("Finished retransmission attempts for a packet");
     if (packet == nullptr)
@@ -96,6 +97,7 @@ LoraPacketTracker::RequiredTransmissionsCallback(uint8_t reqTx,
     entry.sf = sf;
     entry.reTxAttempts = reqTx;
     entry.successful = success;
+    entry.ackFirstWindown = ackFirstWindow;
     if (packet != nullptr)
     {
         m_reTransmissionTracker.insert(std::pair<Ptr<Packet>, RetransmissionStatus>(packet, entry));
@@ -602,6 +604,91 @@ LoraPacketTracker::AvgPacketTimeOnAir(Time startTime,
                             {
                                 timeOnAirFrequency[timeOnAirSeconds]++;
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Calcula a média ponderada
+    double totalWeightedTimeOnAir = 0;
+    int totalWeight = 0;
+    for (const auto& pair : timeOnAirFrequency)
+    {
+        double timeOnAir = pair.first;
+        int weight = pair.second;
+        totalWeightedTimeOnAir += timeOnAir * weight;
+        totalWeight += weight;
+    }
+
+    double avgTimeOnAir = totalWeightedTimeOnAir / totalWeight;
+
+    return std::to_string(avgTimeOnAir);
+}
+
+std::string
+LoraPacketTracker::AvgPacketTimeOnAirRtx(Time startTime,
+                                         Time stopTime,
+                                         uint32_t gwId,
+                                         uint32_t gwNum,
+                                         uint8_t sf,
+                                         std::map<LoraDeviceAddress, deviceFCtn> mapDevices)
+{
+    Time timeOnAir = Seconds(0);
+    std::map<double, int> timeOnAirFrequency;
+    LoraTxParameters params;
+
+    for (uint32_t i = gwId; i < (gwId + gwNum); i++)
+    {
+        for (auto itMac = m_reTransmissionTracker.begin(); itMac != m_reTransmissionTracker.end();
+             ++itMac)
+        {
+            if ((*itMac).second.sf == sf)
+            {
+                params.sf = sf;
+                Ptr<Packet> packetCopy =
+                    (*itMac).first->Copy(); // Crie uma cópia não-constante do pacote
+                LorawanMacHeader mHdr;
+                LoraFrameHeader fHdr;
+                packetCopy->RemoveHeader(mHdr);
+                packetCopy->RemoveHeader(fHdr);
+                LoraDeviceAddress address = fHdr.GetAddress();
+                if (mapDevices.find(address) != mapDevices.end())
+                {
+                    if ((*itMac).second.firstAttempt >= startTime &&
+                        (*itMac).second.firstAttempt <= stopTime)
+                    {
+                        timeOnAir = LoraPhy::GetOnAirTime((*itMac).first->Copy(), params);
+                        double timeOnAirSeconds = timeOnAir.GetSeconds();
+
+                        // Esquema Temporal
+
+                        // 1. Envio do uplink: t = 0 s
+                        // 2. Abertura da RX1: t = 1 s (m_receiveDelay1)
+                        // 3. Escuta na RX1: t = 1 s a t = 2 s (1 segundo de escuta)
+                        // 4. Fechamento da RX1: t = 2 s
+                        // 5. Abertura da RX2: t = 2 s (após m_receiveDelay2 do envio do uplink)
+                        // 6. Escuta na RX2: t = 2 s a t = 4 s (2 segundos de escuta)
+                        
+                        // Tempo total caso o pacote seja recebido na RX1: 2 segundos
+                        if ((*itMac).second.ackFirstWindown)
+                        {
+                            timeOnAirSeconds = timeOnAirSeconds + Seconds(2).GetSeconds();
+                        }
+                        // Tempo total caso o pacote seja recebido na RX2:t_total_RX2 = 5 segundos
+                        else{
+
+                        }
+
+                        // Incrementa a frequência do tempo no ar
+                        if (timeOnAirFrequency.find(timeOnAirSeconds) == timeOnAirFrequency.end())
+                        {
+                            timeOnAirFrequency[timeOnAirSeconds] = 1;
+                        }
+                        else
+                        {
+                            timeOnAirFrequency[timeOnAirSeconds]++;
                         }
                     }
                 }

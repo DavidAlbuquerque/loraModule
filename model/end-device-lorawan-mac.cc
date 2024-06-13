@@ -247,6 +247,7 @@ EndDeviceLorawanMac::DoSend(Ptr<Packet> packet)
                                  false,
                                  m_retxParams.firstAttempt,
                                  m_retxParams.packet,
+                                 m_retxParams.ackFirstWindow,
                                  GetSfFromDataRate(m_dataRate));
             NS_LOG_DEBUG(" Received new packet from the application layer: stopping retransmission "
                          "procedure. Used "
@@ -358,6 +359,7 @@ EndDeviceLorawanMac::ParseCommands(LoraFrameHeader frameHeader)
                                  true,
                                  m_retxParams.firstAttempt,
                                  m_retxParams.packet,
+                                 m_retxParams.ackFirstWindow,
                                  GetSfFromDataRate(m_dataRate));
             NS_LOG_DEBUG("Received ACK packet after "
                          << unsigned(txs) << " transmissions: stopping retransmission procedure. ");
@@ -630,6 +632,7 @@ EndDeviceLorawanMac::resetRetransmissionParameters()
     m_retxParams.retxLeft = m_maxNumbTx;
     m_retxParams.packet = 0;
     m_retxParams.firstAttempt = Seconds(0);
+    m_retxParams.ackFirstWindow = false;
 
     // Cancel next retransmissions, if any
     Simulator::Cancel(m_nextTx);
