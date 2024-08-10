@@ -112,7 +112,6 @@ ClassAEndDeviceLorawanMac::SendToPhy(Ptr<Packet> packetToSend)
     params.lowDataRateOptimizationEnabled =
         LoraPhy::GetTSym(params) > MilliSeconds(16) ? true : false;
 
-
     // Wake up PHY layer and directly send the packet
 
     Ptr<LogicalLoraChannel> txChannel = GetChannelForTx();
@@ -181,13 +180,11 @@ ClassAEndDeviceLorawanMac::Receive(Ptr<const Packet> packet)
 
         if (messageForUs)
         {
-
             NS_LOG_INFO("The message is for us!");
 
             // If it exists, cancel the second receive window event
             // THIS WILL BE GetReceiveWindow()
             Simulator::Cancel(m_secondReceiveWindow);
-            m_retxParams.ackFirstWindow = true;
 
             // Parse the MAC commands
             ParseCommands(fHdr);
@@ -210,14 +207,14 @@ ClassAEndDeviceLorawanMac::Receive(Ptr<const Packet> packet)
             {
                 if (m_retxParams.retxLeft == 0)
                 {
-                    m_retxParams.ackFirstWindow = false;
+                    //m_retxParams.ackFirstWindow = false;
                     uint8_t txs = m_maxNumbTx - (m_retxParams.retxLeft);
                     m_requiredTxCallback(txs,
                                          false,
                                          m_retxParams.firstAttempt,
                                          m_retxParams.packet,
-                                         m_retxParams.ackFirstWindow,
-                                         GetSfFromDataRate(m_dataRate));
+                                         GetSfFromDataRate(m_dataRate),
+                                         m_retxParams.ackFirstWindow);
                     NS_LOG_DEBUG("Failure: no more retransmissions left. Used "
                                  << unsigned(txs) << " transmissions.");
 
@@ -249,10 +246,10 @@ ClassAEndDeviceLorawanMac::Receive(Ptr<const Packet> packet)
                                  false,
                                  m_retxParams.firstAttempt,
                                  m_retxParams.packet,
-                                 m_retxParams.ackFirstWindow,
-                                 GetSfFromDataRate(m_dataRate));
-            NS_LOG_DEBUG("Failure: no more retransmissions left. Used " << unsigned(txs)
-                                                                        << " transmissions.");
+                                 GetSfFromDataRate(m_dataRate),
+                                 m_retxParams.ackFirstWindow);
+                NS_LOG_DEBUG("Failure: no more retransmissions left. Used " << unsigned(txs)
+                                                                            << " transmissions.");
 
             // Reset retransmission parameters
             resetRetransmissionParameters();
@@ -285,10 +282,10 @@ ClassAEndDeviceLorawanMac::FailedReception(Ptr<const Packet> packet)
                                  false,
                                  m_retxParams.firstAttempt,
                                  m_retxParams.packet,
-                                 m_retxParams.ackFirstWindow,
-                                 GetSfFromDataRate(m_dataRate));
-            NS_LOG_DEBUG("Failure: no more retransmissions left. Used " << unsigned(txs)
-                                                                        << " transmissions.");
+                                 GetSfFromDataRate(m_dataRate),
+                                 m_retxParams.ackFirstWindow);
+                NS_LOG_DEBUG("Failure: no more retransmissions left. Used " << unsigned(txs)
+                                                                            << " transmissions.");
 
             // Reset retransmission parameters
             resetRetransmissionParameters();
@@ -325,6 +322,7 @@ void
 ClassAEndDeviceLorawanMac::OpenFirstReceiveWindow(void)
 {
     NS_LOG_FUNCTION_NOARGS();
+    m_retxParams.ackFirstWindow = true;;
 
     // Set Phy in Standby mode
     m_phy->GetObject<EndDeviceLoraPhy>()->SwitchToStandby();
@@ -345,6 +343,7 @@ void
 ClassAEndDeviceLorawanMac::CloseFirstReceiveWindow(void)
 {
     NS_LOG_FUNCTION_NOARGS();
+    
 
     Ptr<EndDeviceLoraPhy> phy = m_phy->GetObject<EndDeviceLoraPhy>();
 
@@ -375,7 +374,7 @@ void
 ClassAEndDeviceLorawanMac::OpenSecondReceiveWindow(void)
 {
     NS_LOG_FUNCTION_NOARGS();
-
+    m_retxParams.ackFirstWindow = false;
     // Check for receiver status: if it's locked on a packet, don't open this
     // window at all.
     if (m_phy->GetObject<EndDeviceLoraPhy>()->GetState() == EndDeviceLoraPhy::RX)
@@ -455,10 +454,10 @@ ClassAEndDeviceLorawanMac::CloseSecondReceiveWindow(void)
                                  false,
                                  m_retxParams.firstAttempt,
                                  m_retxParams.packet,
-                                 m_retxParams.ackFirstWindow,
-                                 GetSfFromDataRate(m_dataRate));
-            NS_LOG_DEBUG("Failure: no more retransmissions left. Used " << unsigned(txs)
-                                                                        << " transmissions.");
+                                 GetSfFromDataRate(m_dataRate),
+                                 m_retxParams.ackFirstWindow);
+                NS_LOG_DEBUG("Failure: no more retransmissions left. Used " << unsigned(txs)
+                                                                            << " transmissions.");
 
             // Reset retransmission parameters
             resetRetransmissionParameters();
@@ -472,15 +471,15 @@ ClassAEndDeviceLorawanMac::CloseSecondReceiveWindow(void)
     else
     {
         uint8_t txs = m_maxNumbTx - (m_retxParams.retxLeft);
-        m_requiredTxCallback(txs, 
+        m_requiredTxCallback(txs,
                              true,
                              m_retxParams.firstAttempt,
                              m_retxParams.packet,
-                             m_retxParams.ackFirstWindow,
-                             GetSfFromDataRate(m_dataRate));
-        NS_LOG_INFO(
-            "We have " << unsigned(m_retxParams.retxLeft)
-                       << " transmissions left. We were not transmitting confirmed messages.");
+                             GetSfFromDataRate(m_dataRate),
+                             m_retxParams.ackFirstWindow);
+            NS_LOG_INFO("We have "
+                        << unsigned(m_retxParams.retxLeft)
+                        << " transmissions left. We were not transmitting confirmed messages.");
 
         // Reset retransmission parameters
         resetRetransmissionParameters();

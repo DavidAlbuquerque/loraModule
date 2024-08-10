@@ -55,7 +55,7 @@ using namespace std;
 
 NS_LOG_COMPONENT_DEFINE("LorawanTestSimulatorRTX");
 
-#define MAXRTX 4
+#define MAXRTX 2
 
 // File settings
 string endDevRegularFile = "./scratch/TestResult/test";
@@ -72,6 +72,7 @@ vector<uint16_t> sfQuantAll(6, 0);
 /* std::vector<uint16_t> sfQuantAll(1, 0); */
 vector<double> rtxQuant(4, 0);
 std::map<LoraDeviceAddress, deviceFCtn> mapEndAlarm, mapEndRegular;
+std::map<LoraDeviceAddress, uint8_t> AoIPlottingDevices;
 std::map<ns3::Ptr<ns3::Node>, deviceType> deviceTypeMap;
 std::map<LoraDeviceAddress, Ptr<EndDeviceLoraPhy>> devicePhyMapRegular, devicePhyMapAlarm;
 uint16_t nDevicesAlarm;
@@ -79,7 +80,7 @@ uint16_t nDevicesAlarm;
 uint16_t nDevicesRegular;
 
 // Metrics
-double packLoss = 0, sent = 0, received = 0, avgDelay = 0, avgTimeOnAir = 0;
+double packLoss = 0, sent = 0, received = 0, avgDelay = 0, avgTimeOnAir = 0, AOI = 0;
 double angle = 0, sAngle = M_PI; //, radius1=4200; //, radius2=4900;
 double throughput = 0, probSucc = 0, probLoss = 0;
 
@@ -117,6 +118,74 @@ enum simulationType
     S_REGULARES_SF7,
     S_ALARM_SF7
 };
+
+
+// Função para escrever dados em arquivos para um SF específico
+void WriteDataAoi(const std::string& filename, const DataAgeInformation& m_dataAoi, uint8_t SF)
+{
+    // Abre o arquivo para primarySeries
+    std::string primaryFilename = filename + "P";
+    std::string secondaryFilename = filename + "S";
+    std::ofstream primaryFile(primaryFilename);
+    if (!primaryFile.is_open())
+    {
+        std::cerr << "Error opening file: " << primaryFilename << std::endl;
+        return;
+    }
+
+    // Abre o arquivo para secondarySeries
+    std::ofstream secondaryFile(secondaryFilename);
+    if (!secondaryFile.is_open())
+    {
+        std::cerr << "Error opening file: " << secondaryFilename << std::endl;
+        primaryFile.close(); // Fecha o primaryFile se houver erro no secondaryFile
+        return;
+    }
+
+    // Procura a série de dados correspondente ao SF especificado
+    auto it = m_dataAoi.find(SF);
+    if (it != m_dataAoi.end())
+    {
+        const auto& seriesData = it->second;
+
+        // Ordena o primarySeries pelo eixo x (primeiro elemento do par)
+        auto sortedPrimary = seriesData.primarySeries;
+        std::sort(sortedPrimary.begin(),
+                  sortedPrimary.end(),
+                  [](const std::pair<double, double>& a, const std::pair<double, double>& b) {
+                      return a.first < b.first;
+                  });
+
+        // Escreve os dados ordenados de primarySeries
+        for (const auto& point : sortedPrimary)
+        {
+            primaryFile << point.first << " " << point.second << std::endl;
+        }
+
+        // Ordena o secondarySeries pelo eixo x
+        auto sortedSecondary = seriesData.secondarySeries;
+        std::sort(sortedSecondary.begin(),
+                  sortedSecondary.end(),
+                  [](const std::pair<double, double>& a, const std::pair<double, double>& b) {
+                      return a.first < b.first;
+                  });
+
+        // Escreve os dados ordenados de secondarySeries
+        for (const auto& point : sortedSecondary)
+        {
+            secondaryFile << point.first << " " << point.second << std::endl;
+        }
+    }
+    else
+    {
+        std::cerr << "SF " << static_cast<int>(SF) << " not found in data." << std::endl;
+    }
+
+    // Fecha ambos os arquivos
+    primaryFile.close();
+    secondaryFile.close();
+}
+
 
 void
 simulationConfig(simulationType type, std::map<ns3::Ptr<ns3::Node>, deviceType> deviceTypeMap)
@@ -229,7 +298,7 @@ metricsResultFile(LoraPacketTracker& tracker,
     NS_LOG_INFO(endl << "//////////////////////////////////////////////");
     NS_LOG_INFO("//  METRICS FOR " << deviceMetric << " DEVICES  //");
     NS_LOG_INFO("//////////////////////////////////////////////" << endl);
-    NS_LOG_INFO("SF Allocation " << deviceMetric << " Devices: 6 -> " << "SF7="
+    NS_LOG_INFO("SF Allocation " << deviceMetric << " Devices: -> " << "SF7="
                                  << (unsigned)sfQuant.at(0) << " SF8=" << (unsigned)sfQuant.at(1)
                                  << " SF9=" << (unsigned)sfQuant.at(2) << " SF10="
                                  << (unsigned)sfQuant.at(3) << " SF11=" << (unsigned)sfQuant.at(4)
@@ -256,12 +325,19 @@ metricsResultFile(LoraPacketTracker& tracker,
                                                                   i)) >>
                     avgDelay;
 
-                stringstream(tracker.AvgPacketTimeOnAir(Seconds(0),
+                /* stringstream(tracker.AvgPacketTimeOnAir(Seconds(0),
                                                         appStopTime + Hours(1),
                                                         (unsigned)nDevicesTotally,
                                                         (unsigned)nGateways,
                                                         i)) >>
-                    avgTimeOnAir;
+                    avgTimeOnAir; */
+
+                stringstream(tracker.CountInformationOfAgeGlobally(Seconds(0),
+                                                                   appStopTime + Hours(1),
+                                                                   (unsigned)nDevicesTotally,
+                                                                   (unsigned)nGateways,
+                                                                   i)) >>
+                    AOI;
             }
             else
             {
@@ -279,13 +355,24 @@ metricsResultFile(LoraPacketTracker& tracker,
                                                                   mapDevices)) >>
                     avgDelay;
 
-                stringstream(tracker.AvgPacketTimeOnAir(Seconds(0),
-                                                        appStopTime + Hours(1),
-                                                        (unsigned)nDevicesTotally,
-                                                        (unsigned)nGateways,
-                                                        i,
-                                                        mapDevices)) >>
-                    avgTimeOnAir;
+                if (flagRtx)
+                {
+                    /*  stringstream(tracker.AvgPacketTimeOnAirRtx(Seconds(0),
+                                                                appStopTime + Hours(1),
+                                                                i,
+                                                                mapDevices)) >>
+                         avgTimeOnAir; */
+                }
+                else
+                {
+                    /* stringstream(tracker.AvgPacketTimeOnAir(Seconds(0),
+                                                            appStopTime + Hours(1),
+                                                            (unsigned)nDevicesTotally,
+                                                            (unsigned)nGateways,
+                                                            i,
+                                                            mapDevices)) >>
+                        avgTimeOnAir; */
+                }
             }
 
             packLoss = sent - received;
@@ -302,9 +389,12 @@ metricsResultFile(LoraPacketTracker& tracker,
                                  << probLoss << "   |  " << avgDelay << "   |  " << avgTimeOnAir);
             NS_LOG_INFO("----------------------------------------------------------------" << endl);
 
-            myfile.open(fileMetric + "-SF" + to_string(i) + ".dat", ios::out | ios::app);
+            /* myfile.open(fileMetric + "-SF" + to_string(i) + ".dat", ios::out | ios::app);
             myfile << nDevices << ", " << throughput << ", " << probSucc << ", " << probLoss << ", "
                    << avgDelay << ", " << avgTimeOnAir << "\n";
+            myfile.close(); */
+            myfile.open(fileMetric + "-SF" + to_string(i) + ".dat", ios::out | ios::app);
+            myfile << avgTimeOnAir << "\n";
             myfile.close();
 
             if (flagRtx && deviceMetric != "all devices")
@@ -802,7 +892,7 @@ main(int argc, char* argv[])
     gwFile += to_string(trial) + "/GWs" + to_string(nGateways) + ".dat";
 
     // Set up logging
-    LogComponentEnable("LorawanTestSimulatorRTX", LOG_LEVEL_ALL);
+    // LogComponentEnable("LorawanTestSimulatorRTX", LOG_LEVEL_ALL);
     // LogComponentEnable("LoraPacketTracker", LOG_LEVEL_ALL);
     //   LogComponentEnable("LoraChannel", LOG_LEVEL_INFO);
     //   LogComponentEnable("LoraPhy", LOG_LEVEL_ALL);
@@ -928,7 +1018,6 @@ main(int argc, char* argv[])
 
     // Combine end devices into a single NodeContainer
     NodeContainer combinedEndDevices;
-
     for (NodeContainer::Iterator it = endDevicesRegular.Begin(); it != endDevicesRegular.End();
          ++it)
     {
@@ -1072,7 +1161,7 @@ main(int argc, char* argv[])
     /* sfQuantRegular =
         macHelper.SetSpreadingFactorsUp(endDevicesRegular, gateways, channel, flagRtx, 7);
     sfQuantAlarm = macHelper.SetSpreadingFactorsUp(endDevicesAlarm, gateways, channel, flagRtx, 7);
-  */
+    */
 
     // sfQuant = macHelper.SetSpreadingFactorsEIB (endDevices, radius);
     // sfQuant = macHelper.SetSpreadingFactorsEAB (endDevices, radius);
@@ -1089,45 +1178,44 @@ main(int argc, char* argv[])
     for (uint16_t i = 0; i < sfQuantAll.size(); i++)
         sfQuantAll.at(i) = sfQuantAlarm.at(i) + sfQuantRegular.at(i);
 
-    /* for (uint16_t i = 0; i < sfQuantRegular.size(); i++)
-    {
-        if (sfQuantRegular.at(i))
-        {
-            numClass++;
-        }
-    }
-
-    for (uint16_t i = 0; i < sfQuantAlarm.size(); i++)
-    {
-        if (sfQuantAlarm.at(i))
-        {
-            numClass++;
-        }
-    }
-
-    for (uint16_t i = 0; i < sfQuantAll.size(); i++)
-    {
-        if (i < sfQuantAlarm.size() && i < sfQuantRegular.size())
-        {
-            sfQuantAll.at(i) = sfQuantAlarm.at(i) + sfQuantRegular.at(i);
-        }
-        else if (i < sfQuantAlarm.size())
-        {
-            sfQuantAll.at(i) = sfQuantAlarm.at(i);
-        }
-        else if (i < sfQuantRegular.size())
-        {
-            sfQuantAll.at(i) = sfQuantRegular.at(i);
-        }
-    } */
-
     /*********************************************
      *  Retransmission  *
      *********************************************/
 
     if (flagRtx)
     {
-        simulationConfig(S_ALARM_SF7, deviceTypeMap);
+        simulationConfig(S_TODOS, deviceTypeMap);
+    }
+
+    std::set<uint8_t> usedSFs; // Set to keep track of used SFs
+    for (NodeContainer::Iterator j = combinedEndDevices.Begin(); j != combinedEndDevices.End(); ++j)
+    {
+        Ptr<Node> node = (*j);
+        Ptr<LoraNetDevice> loraNetDevice = node->GetDevice(0)->GetObject<LoraNetDevice>();
+        Ptr<LoraPhy> phy = loraNetDevice->GetPhy();
+        Ptr<EndDeviceLorawanMac> mac = loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
+        Ptr<EndDeviceLoraPhy> endDeviceLoraPhy = phy->GetObject<EndDeviceLoraPhy>();
+
+        uint8_t sf = endDeviceLoraPhy->GetSpreadingFactor();
+        LoraDeviceAddress address = mac->GetDeviceAddress();
+
+        // Check if the SF is already used
+        if (usedSFs.find(sf) == usedSFs.end())
+        {
+            AoIPlottingDevices[address] = sf;
+            usedSFs.insert(sf);
+        }
+
+        // Stop if we have filled all SF slots from 7 to 12
+        if (usedSFs.size() >= 6)
+        {
+            break;
+        }
+    }
+
+    for (auto j = AoIPlottingDevices.begin(); j != AoIPlottingDevices.end(); ++j)
+    {
+        std::cout << "SF: " << static_cast<int>(j->second) << std::endl;
     }
 
     NS_LOG_DEBUG("Completed configuration");
@@ -1194,16 +1282,32 @@ main(int argc, char* argv[])
     // Simulation //
     ////////////////
 
-    Simulator::Stop(appStopTime + Hours(1));
+    Simulator::Stop(appStopTime);
 
     NS_LOG_INFO("Running simulation...");
+
     Simulator::Run();
 
     Simulator::Destroy();
 
+    /* print metrics */
+
     metricsResultFile(helper.GetPacketTracker(), ALARM_DEVICE, fileData, fileMetric);
     metricsResultFile(helper.GetPacketTracker(), REGULAR_DEVICE, fileData, fileMetric);
     metricsResultFile(helper.GetPacketTracker(), ALL, fileData, fileMetric);
+    DataAgeInformation dataAoi =
+        LoraPacketTracker::AgeOfInformationData(Seconds(0), appStopTime, AoIPlottingDevices);
 
+    std::cout << "tamanho de dataAoi: " << dataAoi.size() << std::endl;
+
+    string fileAoi = fileMetric + "AoIData/";
+
+    // Ordena os valores para cada chave
+
+    for (uint8_t i = SF7; i <= SF12; i++)
+    {
+        string fileMetricAoI = fileAoi + "SF" + to_string(i);
+        WriteDataAoi(fileMetricAoI, dataAoi, i);
+    }
     return (0);
 }

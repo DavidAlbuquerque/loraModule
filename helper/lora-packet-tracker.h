@@ -76,6 +76,15 @@ struct MacPacketStatus
     std::map<int, Time> receptionTimes;
 };
 
+struct DataAoi
+{
+    uint8_t sf;
+    std::pair<Time, Time> delta1;
+    std::pair<Time, Time> reset1;
+    std::pair<Time, Time> delta;
+    std::pair<Time, Time> reset;
+};
+
 struct RetransmissionStatus
 {
     Time firstAttempt;
@@ -89,6 +98,15 @@ struct RetransmissionStatus
 typedef std::map<Ptr<const Packet>, MacPacketStatus> MacPacketData;
 typedef std::map<Ptr<const Packet>, PacketStatus> PhyPacketData;
 typedef std::map<Ptr<const Packet>, RetransmissionStatus> RetransmissionData;
+typedef std::pair<double, double> Point;
+
+struct SeriesData
+{
+    std::vector<Point> primarySeries;   // delta1
+    std::vector<Point> secondarySeries; // delta
+};
+
+typedef std::map<u_int8_t, SeriesData> DataAgeInformation;
 
 class LoraPacketTracker
 {
@@ -114,6 +132,11 @@ class LoraPacketTracker
 
     bool IsUplink(Ptr<const Packet> packet);
 
+    static DataAgeInformation AgeOfInformationData(
+        Time startTime,
+        Time stopTime,
+        std::map<LoraDeviceAddress, uint8_t> AoIPlottingDevices);
+
     std::vector<int> CountPhyPacketsPerGw(Time startTime, Time stopTime, int systemId);
     std::string PrintPhyPacketsPerGw(Time startTime, Time stopTime, int systemId);
     std::string CountMacPacketsPerGw(Time startTime, Time stopTime, int systemId);
@@ -131,30 +154,11 @@ class LoraPacketTracker
                                         uint8_t sf,
                                         std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
 
-    std::string AvgPacketTimeOnAir(Time startTime,
-                                   Time stopTime,
-                                   uint32_t gwId,
-                                   uint32_t gwNum,
-                                   uint8_t sf);
-
-    std::string AvgPacketTimeOnAir(Time startTime,
-                                   Time stopTime,
-                                   uint8_t sf,
-                                   std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
-
-    std::string AvgPacketTimeOnAir(Time startTime,
-                                   Time stopTime,
-                                   uint32_t gwId,
-                                   uint32_t gwNum,
-                                   uint8_t sf,
-                                   std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
-
-    std::string AvgPacketTimeOnAirRtx(Time startTime,
-                                      Time stopTime,
-                                      uint32_t gwId,
-                                      uint32_t gwNum,
-                                      uint8_t sf,
-                                      std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+    std::string CountInformationOfAgeGlobally(Time startTime,
+                                              Time stopTime,
+                                              uint32_t gwId,
+                                              uint32_t gwNum,
+                                              uint8_t sf);
 
     std::string CountMacPacketsGloballyCpsr(Time startTime, Time stopTime);
 
@@ -187,11 +191,14 @@ class LoraPacketTracker
                                              uint32_t gwNum,
                                              uint8_t sf,
                                              std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+    static DataAgeInformation GetDataAoi();
 
   private:
     PhyPacketData m_packetTracker;
     MacPacketData m_macPacketTracker;
+    static std::map<Ptr<const Packet>, DataAoi> aoiMap;
     RetransmissionData m_reTransmissionTracker;
+    static DataAgeInformation m_dataAoi;
 };
 
 } // namespace lorawan

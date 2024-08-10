@@ -37,6 +37,10 @@ namespace ns3
 {
 namespace lorawan
 {
+// Inicialização do membro estático
+DataAgeInformation LoraPacketTracker::m_dataAoi;
+std::map<Ptr<const Packet>, DataAoi> LoraPacketTracker::aoiMap;
+
 NS_LOG_COMPONENT_DEFINE("LoraPacketTracker");
 
 LoraPacketTracker::LoraPacketTracker()
@@ -78,30 +82,55 @@ LoraPacketTracker::MacTransmissionCallback(Ptr<const Packet> packet, uint8_t sf)
 void
 LoraPacketTracker::RequiredTransmissionsCallback(uint8_t reqTx,
                                                  bool success,
-                                                 Time firstAttempt,
-                                                 Ptr<Packet> packet,
+                                                 ns3::Time firstAttempt,
+                                                 ns3::Ptr<ns3::Packet> packet,
                                                  uint8_t sf,
                                                  bool ackFirstWindow)
 {
     NS_LOG_INFO("Finished retransmission attempts for a packet");
-    if (packet == nullptr)
-    {
-        NS_LOG_DEBUG("PACOTE NULL");
-    }
     NS_LOG_DEBUG("Packet: " << packet << " ReqTx " << unsigned(reqTx) << ", succ: " << success
                             << ", firstAttempt: " << firstAttempt.GetSeconds());
 
     RetransmissionStatus entry;
     entry.firstAttempt = firstAttempt;
-    entry.finishTime = Simulator::Now();
+    entry.finishTime = ns3::Simulator::Now();
     entry.sf = sf;
     entry.reTxAttempts = reqTx;
     entry.successful = success;
     entry.ackFirstWindown = ackFirstWindow;
+
+    // Variáveis estáticas para manter o estado entre chamadas
+    static ns3::Time previousFirst = ns3::Seconds(0);
+
+    // Imprimir os valores antes da subtração
+    std::cout << "Current firstAttempt: " << firstAttempt.GetSeconds() << " seconds\n";
+    std::cout << "Previous firstAttempt: " << previousFirst.GetSeconds() << " seconds\n";
+
+    // Calcular delta1 garantindo que seja sempre positivo
+    ns3::Time delta1Second =
+        firstAttempt > previousFirst ? firstAttempt - previousFirst : previousFirst - firstAttempt;
+    std::cout << "Delta1 (absolute difference): " << delta1Second.GetSeconds() << " seconds\n";
+
+    DataAoi data;
+    data.delta1 = std::make_pair(firstAttempt, delta1Second);
+    data.reset1 = std::make_pair(firstAttempt, ns3::Seconds(0));
+    data.delta = std::make_pair(entry.finishTime, entry.finishTime);
+    data.reset = std::make_pair(entry.finishTime, entry.finishTime - firstAttempt);
+
     if (packet != nullptr)
     {
-        m_reTransmissionTracker.insert(std::pair<Ptr<Packet>, RetransmissionStatus>(packet, entry));
+        m_reTransmissionTracker.insert(std::make_pair(packet, entry));
+        aoiMap.insert(std::make_pair(packet, data));
     }
+
+    // Atualizar variáveis estáticas para a próxima chamada
+    previousFirst = firstAttempt;
+}
+
+DataAgeInformation
+LoraPacketTracker::GetDataAoi()
+{
+    return m_dataAoi;
 }
 
 void
@@ -209,6 +238,68 @@ LoraPacketTracker::LostBecauseTxCallback(Ptr<const Packet> packet, uint32_t gwId
         std::map<Ptr<const Packet>, PacketStatus>::iterator it = m_packetTracker.find(packet);
         (*it).second.outcomes.insert(std::pair<int, enum PhyPacketOutcome>(gwId, LOST_BECAUSE_TX));
     }
+}
+
+DataAgeInformation
+LoraPacketTracker::AgeOfInformationData(Time startTime,
+                                        Time stopTime,
+                                        std::map<LoraDeviceAddress, uint8_t> AoIPlottingDevices)
+{
+    for (auto it = AoIPlottingDevices.begin(); it != AoIPlottingDevices.end(); ++it)
+    {
+        for (auto j = aoiMap.begin(); j != aoiMap.end(); ++j)
+        {
+            LorawanMacHeader mHdr;
+            LoraFrameHeader fHdr;
+            Ptr<Packet> packetCopy = j->first->Copy();
+            packetCopy->RemoveHeader(mHdr);
+            packetCopy->RemoveHeader(fHdr);
+            LoraDeviceAddress address = fHdr.GetAddress();
+
+            if (it->first == address)
+            {
+                // std::cout<<"sf: "<< static_cast<int>(it->second)<<std::endl;
+                /* Reference:
+                 * Roy D. Yates, Yin Sun, D. Richard Brown, III, Sanjit K. Kaul, Eytan
+                 * Modiano, Sennur Ulukus, "Age of Information: An Introduction and Survey",
+                 * IEEE Journal, Fellow, IEEE.
+                 */
+
+                // Debug: Antes de adicionar os pontos
+                /* std::cout << "endereço do pacote " << address << "endereço do dispositivo " <<
+                   it->first
+                          << std::endl; */
+
+                // Adiciona ponto à primarySeries
+                m_dataAoi[it->second].primarySeries.push_back(
+                    std::make_pair(j->second.delta1.first.GetSeconds(),
+                                   j->second.delta1.second.GetSeconds()));
+                /* std::cout << "Added to primarySeries: (" << j->second.delta1.first.GetSeconds()
+                          << ", " << j->second.delta1.second.GetSeconds() << ")" << std::endl; */
+
+                // Reset delta1
+                m_dataAoi[it->second].primarySeries.push_back(
+                    std::make_pair(j->second.reset1.first.GetSeconds(), Seconds(0).GetSeconds()));
+                /* std::cout << "Reset primarySeries: (" << j->second.reset1.first.GetSeconds()
+                          << ", 0)" << std::endl; */
+
+                // Adiciona ponto à secondarySeries
+                m_dataAoi[it->second].secondarySeries.push_back(
+                    std::make_pair(j->second.delta.first.GetSeconds(),
+                                   j->second.delta.second.GetSeconds()));
+                /* std::cout << "Added to secondarySeries: (" << j->second.delta.first.GetSeconds()
+                          << ", " << j->second.delta.second.GetSeconds() << ")" << std::endl; */
+
+                // Reset delta
+                m_dataAoi[it->second].secondarySeries.push_back(
+                    std::make_pair(j->second.reset.first.GetSeconds(),
+                                   j->second.reset.second.GetSeconds()));
+                /*  std::cout << "Reset secondarySeries: (" << j->second.reset.first.GetSeconds()
+                           << ", " << j->second.reset.second.GetSeconds() << ")" << std::endl; */
+            }
+        }
+    }
+    return m_dataAoi;
 }
 
 bool
@@ -458,258 +549,67 @@ LoraPacketTracker::CountMacPacketsGlobally(Time startTime,
 }
 
 std::string
-LoraPacketTracker::AvgPacketTimeOnAir(Time startTime,
-                                      Time stopTime,
-                                      uint32_t gwId,
-                                      uint32_t gwNum,
-                                      uint8_t sf)
+LoraPacketTracker::CountInformationOfAgeGlobally(Time startTime,
+                                                 Time stopTime,
+                                                 uint32_t gwId,
+                                                 uint32_t gwNum,
+                                                 uint8_t sf)
 {
-    NS_LOG_FUNCTION(this << startTime << stopTime);
-    Time timeOnAir = Seconds(0);
-    std::map<double, int> timeOnAirFrequency;
+    Time delaySum = Seconds(0);
+    double avgDelay = 0;
+    double sent = 0;
+    double received = 0;
     LoraTxParameters params;
 
-    for (uint32_t i = gwId; i < (gwId + gwNum); i++)
-    {
-        for (auto it = m_macPacketTracker.begin(); it != m_macPacketTracker.end(); ++it)
-        {
-            if ((*it).second.sf == sf)
-            {
-                if ((*it).second.sendTime >= startTime && (*it).second.sendTime <= stopTime)
-                {
-                    if ((*it).second.receptionTimes.size())
-                    {
-                        if ((*it).second.receptionTimes.find(i) !=
-                            (*it).second.receptionTimes.end())
-                        {
-                            timeOnAir = LoraPhy::GetOnAirTime((*it).first->Copy(), params);
-                            double timeOnAirSeconds = timeOnAir.GetSeconds();
-
-                            // Incrementa a frequência do tempo no ar
-                            if (timeOnAirFrequency.find(timeOnAirSeconds) ==
-                                timeOnAirFrequency.end())
-                            {
-                                timeOnAirFrequency[timeOnAirSeconds] = 1;
-                            }
-                            else
-                            {
-                                timeOnAirFrequency[timeOnAirSeconds]++;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Calcula a média ponderada
-    double totalWeightedTimeOnAir = 0;
-    int totalWeight = 0;
-    for (const auto& pair : timeOnAirFrequency)
-    {
-        double timeOnAir = pair.first;
-        int weight = pair.second;
-        totalWeightedTimeOnAir += timeOnAir * weight;
-        totalWeight += weight;
-    }
-
-    double avgTimeOnAir = totalWeightedTimeOnAir / totalWeight;
-
-    return std::to_string(avgTimeOnAir);
-}
-
-std::string
-LoraPacketTracker::AvgPacketTimeOnAir(Time startTime,
-                                      Time stopTime,
-                                      uint8_t sf,
-                                      std::map<LoraDeviceAddress, deviceFCtn> mapDevices)
-{
-    NS_LOG_FUNCTION(this << startTime << stopTime);
-    Time timeOnAir = Seconds(0);
-    double avgTimeOnAir = 0;
-    int count = 0;
-
-    for (auto it = m_macPacketTracker.begin(); it != m_macPacketTracker.end(); ++it)
+    for (auto it = m_reTransmissionTracker.begin(); it != m_reTransmissionTracker.end(); ++it)
     {
         if ((*it).second.sf == sf)
         {
-            Ptr<Packet> packetCopy = (*it).first->Copy();
-            LorawanMacHeader mHdr;
-            LoraFrameHeader fHdr;
-            packetCopy->RemoveHeader(mHdr);
-            packetCopy->RemoveHeader(fHdr);
-            LoraDeviceAddress address = fHdr.GetAddress();
-            if (mapDevices.find(address) != mapDevices.end())
+            params.sf = sf;
+            if ((*it).second.firstAttempt >= startTime && (*it).second.firstAttempt <= stopTime)
             {
-                if ((*it).second.sendTime >= startTime && (*it).second.sendTime <= stopTime)
+                sent++;
+
+                NS_LOG_DEBUG("Found a packet");
+                NS_LOG_DEBUG("Number of attempts: " << unsigned(it->second.reTxAttempts)
+                                                    << ", successful: " << it->second.successful);
+                if (it->second.successful)
                 {
-                    if ((*it).second.receptionTimes.size())
+                    Time oat = LoraPhy::GetOnAirTime((*it).first->Copy(), params);
+                    received++;
+                    delaySum = it->second.finishTime - it->second.firstAttempt;
+                    delaySum = Seconds(0);
+
+                    /* if ((*it).second.ackFirstWindown &&
+                        static_cast<int>((*it).second.reTxAttempts) == 2)
                     {
-                        timeOnAir += (*it).second.receivedTime - (*it).second.sendTime;
-                        count++;
-                    }
+                        std::cout << "sf:" << static_cast<int>((*it).second.sf) << std::endl;
+                        std::cout << "Age of information: " << delaySum.GetSeconds()
+                                  << " J : " << (*it).second.ackFirstWindown << std::endl;
+
+                        std::cout << "On air time: "
+                                  << double(LoraPhy::GetOnAirTime((*it).first->Copy(), params)
+                                                .GetSeconds())
+                                  << std::endl
+                                  << std::endl;
+                    } */
                 }
+                /* std::cout << "sf:" << static_cast<int>((*it).second.sf) << std::endl;
+                std::cout << "enviado: " << double((*it).second.firstAttempt.GetSeconds()) <<
+                std::endl; std::cout << "recebido: " << double((*it).second.finishTime.GetSeconds())
+                << std::endl << std::endl; */
             }
         }
     }
-    avgTimeOnAir = (timeOnAir / count).GetSeconds();
-    return std::to_string(avgTimeOnAir);
-}
+    /* std::cout << "sent: " << sent << " received: " << received << " d: " << delaySum.GetSeconds()
+              << std::endl; */
 
-std::string
-LoraPacketTracker::AvgPacketTimeOnAir(Time startTime,
-                                      Time stopTime,
-                                      uint32_t gwId,
-                                      uint32_t gwNum,
-                                      uint8_t sf,
-                                      std::map<LoraDeviceAddress, deviceFCtn> mapDevices)
-{
-    Time timeOnAir = Seconds(0);
-    std::map<double, int> timeOnAirFrequency;
-    LoraTxParameters params;
-
-    for (uint32_t i = gwId; i < (gwId + gwNum); i++)
+    if (received != 0)
     {
-        // std::map<ns3::Ptr<ns3::Node>, deviceType>::iterator j = deviceTypeMap.begin();
-
-        for (auto itMac = m_macPacketTracker.begin(); itMac != m_macPacketTracker.end(); ++itMac)
-        {
-            if ((*itMac).second.sf == sf)
-            {
-                params.sf = sf;
-                Ptr<Packet> packetCopy =
-                    (*itMac).first->Copy(); // Crie uma cópia não-constante do pacote
-                LorawanMacHeader mHdr;
-                LoraFrameHeader fHdr;
-                packetCopy->RemoveHeader(mHdr);
-                packetCopy->RemoveHeader(fHdr);
-                LoraDeviceAddress address = fHdr.GetAddress();
-                if (mapDevices.find(address) != mapDevices.end())
-                {
-                    if ((*itMac).second.sendTime > startTime && (*itMac).second.sendTime < stopTime)
-                    {
-                        if ((*itMac).second.receptionTimes.find(i) !=
-                            (*itMac).second.receptionTimes.end())
-                        {
-                            timeOnAir = LoraPhy::GetOnAirTime((*itMac).first->Copy(), params);
-                            double timeOnAirSeconds = timeOnAir.GetSeconds();
-
-                            // Incrementa a frequência do tempo no ar
-                            if (timeOnAirFrequency.find(timeOnAirSeconds) ==
-                                timeOnAirFrequency.end())
-                            {
-                                timeOnAirFrequency[timeOnAirSeconds] = 1;
-                            }
-                            else
-                            {
-                                timeOnAirFrequency[timeOnAirSeconds]++;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        avgDelay = (delaySum / received).GetSeconds();
     }
 
-    // Calcula a média ponderada
-    double totalWeightedTimeOnAir = 0;
-    int totalWeight = 0;
-    for (const auto& pair : timeOnAirFrequency)
-    {
-        double timeOnAir = pair.first;
-        int weight = pair.second;
-        totalWeightedTimeOnAir += timeOnAir * weight;
-        totalWeight += weight;
-    }
-
-    double avgTimeOnAir = totalWeightedTimeOnAir / totalWeight;
-
-    return std::to_string(avgTimeOnAir);
-}
-
-std::string
-LoraPacketTracker::AvgPacketTimeOnAirRtx(Time startTime,
-                                         Time stopTime,
-                                         uint32_t gwId,
-                                         uint32_t gwNum,
-                                         uint8_t sf,
-                                         std::map<LoraDeviceAddress, deviceFCtn> mapDevices)
-{
-    Time timeOnAir = Seconds(0);
-    std::map<double, int> timeOnAirFrequency;
-    LoraTxParameters params;
-
-    for (uint32_t i = gwId; i < (gwId + gwNum); i++)
-    {
-        for (auto itMac = m_reTransmissionTracker.begin(); itMac != m_reTransmissionTracker.end();
-             ++itMac)
-        {
-            if ((*itMac).second.sf == sf)
-            {
-                params.sf = sf;
-                Ptr<Packet> packetCopy =
-                    (*itMac).first->Copy(); // Crie uma cópia não-constante do pacote
-                LorawanMacHeader mHdr;
-                LoraFrameHeader fHdr;
-                packetCopy->RemoveHeader(mHdr);
-                packetCopy->RemoveHeader(fHdr);
-                LoraDeviceAddress address = fHdr.GetAddress();
-                if (mapDevices.find(address) != mapDevices.end())
-                {
-                    if ((*itMac).second.firstAttempt >= startTime &&
-                        (*itMac).second.firstAttempt <= stopTime)
-                    {
-                        timeOnAir = LoraPhy::GetOnAirTime((*itMac).first->Copy(), params);
-                        double timeOnAirSeconds = timeOnAir.GetSeconds();
-
-                        // Esquema Temporal
-
-                        // 1. Envio do uplink: t = 0 s
-                        // 2. Abertura da RX1: t = 1 s (m_receiveDelay1)
-                        // 3. Escuta na RX1: t = 1 s a t = 2 s (1 segundo de escuta)
-                        // 4. Fechamento da RX1: t = 2 s
-                        // 5. Abertura da RX2: t = 2 s (após m_receiveDelay2 do envio do uplink)
-                        // 6. Escuta na RX2: t = 2 s a t = 4 s (2 segundos de escuta)
-                        
-                        // Tempo total caso o pacote seja recebido na RX1: 2 segundos
-                        if ((*itMac).second.ackFirstWindown)
-                        {
-                            timeOnAirSeconds = timeOnAirSeconds + Seconds(2).GetSeconds();
-                        }
-                        // Tempo total caso o pacote seja recebido na RX2:t_total_RX2 = 5 segundos
-                        else{
-
-                        }
-
-                        // Incrementa a frequência do tempo no ar
-                        if (timeOnAirFrequency.find(timeOnAirSeconds) == timeOnAirFrequency.end())
-                        {
-                            timeOnAirFrequency[timeOnAirSeconds] = 1;
-                        }
-                        else
-                        {
-                            timeOnAirFrequency[timeOnAirSeconds]++;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Calcula a média ponderada
-    double totalWeightedTimeOnAir = 0;
-    int totalWeight = 0;
-    for (const auto& pair : timeOnAirFrequency)
-    {
-        double timeOnAir = pair.first;
-        int weight = pair.second;
-        totalWeightedTimeOnAir += timeOnAir * weight;
-        totalWeight += weight;
-    }
-
-    double avgTimeOnAir = totalWeightedTimeOnAir / totalWeight;
-
-    return std::to_string(avgTimeOnAir);
+    return (std::to_string(avgDelay));
 }
 
 std::string

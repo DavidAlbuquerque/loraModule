@@ -442,7 +442,7 @@ class EndDeviceLorawanMac : public LorawanMac
      *
      * \see class CallBackTraceSource
      */
-    TracedCallback<uint8_t, bool, Time, Ptr<Packet>, bool, uint8_t> m_requiredTxCallback;
+    TracedCallback<uint8_t, bool, Time, Ptr<Packet>, uint8_t, bool> m_requiredTxCallback;
 
   private:
     /**
