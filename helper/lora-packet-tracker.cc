@@ -39,7 +39,7 @@ namespace lorawan
 {
 // Inicialização do membro estático
 DataAgeInformation LoraPacketTracker::m_dataAoi;
-std::map<Ptr<const Packet>, DataAoi> LoraPacketTracker::aoiMap;
+RetransmissionData LoraPacketTracker::m_reTransmissionTracker;
 
 NS_LOG_COMPONENT_DEFINE("LoraPacketTracker");
 
@@ -99,32 +99,17 @@ LoraPacketTracker::RequiredTransmissionsCallback(uint8_t reqTx,
     entry.successful = success;
     entry.ackFirstWindown = ackFirstWindow;
 
-    // Variáveis estáticas para manter o estado entre chamadas
-    static ns3::Time previousFirst = ns3::Seconds(0);
-
-    // Imprimir os valores antes da subtração
-    std::cout << "Current firstAttempt: " << firstAttempt.GetSeconds() << " seconds\n";
-    std::cout << "Previous firstAttempt: " << previousFirst.GetSeconds() << " seconds\n";
-
-    // Calcular delta1 garantindo que seja sempre positivo
-    ns3::Time delta1Second =
-        firstAttempt > previousFirst ? firstAttempt - previousFirst : previousFirst - firstAttempt;
-    std::cout << "Delta1 (absolute difference): " << delta1Second.GetSeconds() << " seconds\n";
-
-    DataAoi data;
+    /* DataAoi data;
     data.delta1 = std::make_pair(firstAttempt, delta1Second);
     data.reset1 = std::make_pair(firstAttempt, ns3::Seconds(0));
     data.delta = std::make_pair(entry.finishTime, entry.finishTime);
-    data.reset = std::make_pair(entry.finishTime, entry.finishTime - firstAttempt);
+    data.reset = std::make_pair(entry.finishTime, entry.finishTime - firstAttempt); */
 
     if (packet != nullptr)
     {
         m_reTransmissionTracker.insert(std::make_pair(packet, entry));
-        aoiMap.insert(std::make_pair(packet, data));
+        /* aoiMap.insert(std::make_pair(packet, data)); */
     }
-
-    // Atualizar variáveis estáticas para a próxima chamada
-    previousFirst = firstAttempt;
 }
 
 DataAgeInformation
@@ -240,14 +225,18 @@ LoraPacketTracker::LostBecauseTxCallback(Ptr<const Packet> packet, uint32_t gwId
     }
 }
 
-DataAgeInformation
+void
 LoraPacketTracker::AgeOfInformationData(Time startTime,
                                         Time stopTime,
                                         std::map<LoraDeviceAddress, uint8_t> AoIPlottingDevices)
 {
+    std::map<ns3::lorawan::LoraDeviceAddress, std::vector<RetransmissionStatus>> DataPackets;
+
+    // std::cout << "Iniciando o mapeamento de pacotes...\n";
     for (auto it = AoIPlottingDevices.begin(); it != AoIPlottingDevices.end(); ++it)
     {
-        for (auto j = aoiMap.begin(); j != aoiMap.end(); ++j)
+        // std::cout << "Verificando dispositivo com endereço: " << it->first << "\n";
+        for (auto j = m_reTransmissionTracker.begin(); j != m_reTransmissionTracker.end(); ++j)
         {
             LorawanMacHeader mHdr;
             LoraFrameHeader fHdr;
@@ -256,50 +245,192 @@ LoraPacketTracker::AgeOfInformationData(Time startTime,
             packetCopy->RemoveHeader(fHdr);
             LoraDeviceAddress address = fHdr.GetAddress();
 
-            if (it->first == address)
+            if (address == it->first)
             {
-                // std::cout<<"sf: "<< static_cast<int>(it->second)<<std::endl;
-                /* Reference:
-                 * Roy D. Yates, Yin Sun, D. Richard Brown, III, Sanjit K. Kaul, Eytan
-                 * Modiano, Sennur Ulukus, "Age of Information: An Introduction and Survey",
-                 * IEEE Journal, Fellow, IEEE.
-                 */
-
-                // Debug: Antes de adicionar os pontos
-                /* std::cout << "endereço do pacote " << address << "endereço do dispositivo " <<
-                   it->first
-                          << std::endl; */
-
-                // Adiciona ponto à primarySeries
-                m_dataAoi[it->second].primarySeries.push_back(
-                    std::make_pair(j->second.delta1.first.GetSeconds(),
-                                   j->second.delta1.second.GetSeconds()));
-                /* std::cout << "Added to primarySeries: (" << j->second.delta1.first.GetSeconds()
-                          << ", " << j->second.delta1.second.GetSeconds() << ")" << std::endl; */
-
-                // Reset delta1
-                m_dataAoi[it->second].primarySeries.push_back(
-                    std::make_pair(j->second.reset1.first.GetSeconds(), Seconds(0).GetSeconds()));
-                /* std::cout << "Reset primarySeries: (" << j->second.reset1.first.GetSeconds()
-                          << ", 0)" << std::endl; */
-
-                // Adiciona ponto à secondarySeries
-                m_dataAoi[it->second].secondarySeries.push_back(
-                    std::make_pair(j->second.delta.first.GetSeconds(),
-                                   j->second.delta.second.GetSeconds()));
-                /* std::cout << "Added to secondarySeries: (" << j->second.delta.first.GetSeconds()
-                          << ", " << j->second.delta.second.GetSeconds() << ")" << std::endl; */
-
-                // Reset delta
-                m_dataAoi[it->second].secondarySeries.push_back(
-                    std::make_pair(j->second.reset.first.GetSeconds(),
-                                   j->second.reset.second.GetSeconds()));
-                /*  std::cout << "Reset secondarySeries: (" << j->second.reset.first.GetSeconds()
-                           << ", " << j->second.reset.second.GetSeconds() << ")" << std::endl; */
+                // std::cout << "Adicionando pacote para o dispositivo: " << address << "\n";
+                DataPackets[address].push_back(j->second);
             }
         }
+        // std::cout << std::endl << std::endl;
     }
-    return m_dataAoi;
+
+    // std::cout << "Iniciando a ordenação dos pacotes...\n";
+    for (auto& entry : DataPackets)
+    {
+        // std::cout << "Ordenando pacotes para o dispositivo: " << entry.first << "\n";
+        std::sort(entry.second.begin(),
+                  entry.second.end(),
+                  [](const RetransmissionStatus& a, const RetransmissionStatus& b) {
+                      return a.firstAttempt < b.firstAttempt;
+                  });
+
+        // std::cout << "Pacotes ordenados para o dispositivo: " << entry.first << "\n";
+        //  Imprime detalhes dos pacotes ordenados
+        /* for (const auto& status : entry.second)
+        {
+             std::cout << "Address: " << entry.first
+                      << ", First Attempt: " << status.firstAttempt.GetSeconds() << " segundos\n";
+             
+        } */
+    }
+    // std::cout << "Ordenação completa.\n";
+
+    InsertDataAoi(DataPackets);
+}
+
+void
+LoraPacketTracker::AgeOfInformationData(Time startTime, Time stopTime)
+{
+    std::map<ns3::lorawan::LoraDeviceAddress, std::vector<RetransmissionStatus>> DataPackets;
+
+
+    for (auto j = m_reTransmissionTracker.begin(); j != m_reTransmissionTracker.end(); ++j)
+    {
+        LorawanMacHeader mHdr;
+        LoraFrameHeader fHdr;
+        Ptr<Packet> packetCopy = j->first->Copy();
+        packetCopy->RemoveHeader(mHdr);
+        packetCopy->RemoveHeader(fHdr);
+        LoraDeviceAddress address = fHdr.GetAddress();
+
+        DataPackets[address].push_back(j->second);
+    }
+
+    // std::cout << "Iniciando a ordenação dos pacotes...\n";
+    for (auto& entry : DataPackets)
+    {
+        // std::cout << "Ordenando pacotes para o dispositivo: " << entry.first << "\n";
+        std::sort(entry.second.begin(),
+                  entry.second.end(),
+                  [](const RetransmissionStatus& a, const RetransmissionStatus& b) {
+                      return a.firstAttempt < b.firstAttempt;
+                  });
+
+    }
+    std::cout<<DataPackets.size()<<std::endl;
+    InsertDataAoi(DataPackets);
+}
+
+void
+LoraPacketTracker::InsertDataAoi(
+    const std::map<ns3::lorawan::LoraDeviceAddress, std::vector<RetransmissionStatus>>& DataPackets)
+{
+    /* Reference:
+     * Roy D. Yates, Yin Sun, D. Richard Brown, III, Sanjit K. Kaul, Eytan
+     * Modiano, Sennur Ulukus, "Age of Information: An Introduction and Survey",
+     * IEEE Journal, Fellow, IEEE.
+     */
+
+    // std::cout << "Iniciando InsertDataAoi...\n";
+    static double lastFirstAttempt = 0;
+    static double lastFinishTime = 0;
+
+    for (const auto& packetEntry : DataPackets)
+    {
+        // std::cout << "Processando dispositivo com endereço: " << packetEntry.first << "\n";
+
+        // cada interação são os pontos de delta e delta1 para o gráfico de AoI para um SF
+        for (const RetransmissionStatus& status : packetEntry.second)
+        {
+            std::cout << "  Processando status...\n";
+            std::cout << "    firstAttempt: " << status.firstAttempt.GetSeconds() << "s\n";
+            std::cout << "    finishTime: " << status.finishTime.GetSeconds() << "s\n";
+
+            double currenteFirsAttempt = status.firstAttempt.GetSeconds();
+            double d1_xValue = status.firstAttempt.GetSeconds();
+
+            double d1_yValue = currenteFirsAttempt - lastFirstAttempt;
+
+            // delta1
+            std::cout << "    delta1 -> x: " << d1_xValue << ", y =  " << currenteFirsAttempt
+                      << " - " << lastFirstAttempt << " = " << d1_yValue << "\n";
+            m_dataAoi[status.sf].primarySeries.push_back(std::make_pair(d1_xValue, d1_yValue));
+
+            lastFirstAttempt = currenteFirsAttempt;
+
+            // reset delta1
+             std::cout << "    Reset delta1 -> x: " << d1_xValue << ", y: 0\n";
+            m_dataAoi[status.sf].primarySeries.push_back(
+                std::make_pair(d1_xValue, Seconds(0).GetSeconds()));
+
+            double currenteFinishTime = status.finishTime.GetSeconds();
+            double d_xValue = status.finishTime.GetSeconds();
+            double d_yValue = currenteFinishTime - lastFinishTime;
+
+            // delta
+            // std::cout << "    delta -> x: " << d_xValue << ", y: " << d_yValue << "\n";
+            m_dataAoi[status.sf].secondarySeries.push_back(std::make_pair(d_xValue, d_yValue));
+
+            // reset delta
+            std::cout << "    Reset delta -> x: " << d_xValue
+                      << ", y: " << (status.finishTime - status.firstAttempt).GetSeconds() << "\n";
+            
+            m_dataAoi[status.sf].secondarySeries.push_back(
+                std::make_pair(d_xValue,
+                               d_yValue - (status.finishTime - status.firstAttempt).GetSeconds()));
+
+            lastFinishTime = currenteFinishTime;
+        }
+        lastFirstAttempt = 0;
+        lastFinishTime = 0;
+    }
+
+    // std::cout << "Finalizando InsertDataAoi...\n";
+}
+
+void
+LoraPacketTracker::CountMetricAoi()
+{
+    std::map<uint8_t, MetricsAoi> metricsMap; // Map para armazenar as métricas por SF
+
+    for (const auto& metricAoi : m_dataAoi)
+    {
+        double sum = 0, sumOfSquares = 0, media = 0;
+        int totalCount = 0;
+        double maxY =
+            std::numeric_limits<double>::lowest();        // Inicializa com o menor valor possível
+        double minY = std::numeric_limits<double>::max(); // Inicializa com o maior valor possível
+
+        const auto& primarySeries = metricAoi.second.primarySeries;
+
+        for (const auto& point : primarySeries)
+        {
+            double y = point.second;
+            sum += y;
+            sumOfSquares += y * y;
+            totalCount++;
+
+            // Atualiza o valor máximo e mínimo de y
+            if (y > maxY)
+                maxY = y;
+            if (y < minY && y != 0)
+                minY = y;
+        }
+
+        // Calcula a média
+        media = (totalCount > 0) ? (sum / totalCount) : 0;
+
+        // Calcula a variância
+        double variance =
+            (totalCount > 1) ? (sumOfSquares - (sum * sum / totalCount)) / (totalCount - 1) : 0;
+
+        // Calcula o desvio padrão
+        double desvioPadrao = std::sqrt(variance);
+
+        // Armazena as métricas no map
+        metricsMap[metricAoi.first] = {media, desvioPadrao, maxY, minY};
+    }
+
+    // Exibe os resultados armazenados no map
+    for (const auto& entry : metricsMap)
+    {
+        std::cout << "SF: " << static_cast<int>(entry.first) << std::endl;
+        std::cout << "Média dos picos: " << entry.second.media << std::endl;
+        std::cout << "Desvio padrão dos picos: " << entry.second.desvioPadrao << std::endl;
+        std::cout << "Valor máximo de pico: " << entry.second.maxY << std::endl;
+        std::cout << "Valor mínimo de pico: " << entry.second.minY << std::endl;
+        std::cout << "-----------------------------------------" << std::endl;
+    }
 }
 
 bool

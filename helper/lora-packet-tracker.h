@@ -78,11 +78,8 @@ struct MacPacketStatus
 
 struct DataAoi
 {
-    uint8_t sf;
-    std::pair<Time, Time> delta1;
-    std::pair<Time, Time> reset1;
-    std::pair<Time, Time> delta;
-    std::pair<Time, Time> reset;
+    ns3::Time firstAttempt;
+    ns3::Time finishAttempt;
 };
 
 struct RetransmissionStatus
@@ -94,6 +91,17 @@ struct RetransmissionStatus
     bool successful;
     bool ackFirstWindown;
 };
+
+struct MetricsAoi {
+    double sum;
+    double sumOfSquares;
+    double media;
+    double desvioPadrao;
+    double maxY;
+    double minY;
+    int totalCount;
+};
+
 
 typedef std::map<Ptr<const Packet>, MacPacketStatus> MacPacketData;
 typedef std::map<Ptr<const Packet>, PacketStatus> PhyPacketData;
@@ -132,10 +140,11 @@ class LoraPacketTracker
 
     bool IsUplink(Ptr<const Packet> packet);
 
-    static DataAgeInformation AgeOfInformationData(
-        Time startTime,
-        Time stopTime,
-        std::map<LoraDeviceAddress, uint8_t> AoIPlottingDevices);
+    static void AgeOfInformationData(Time startTime,
+                                     Time stopTime,
+                                     std::map<LoraDeviceAddress, uint8_t> AoIPlottingDevices);
+
+    static void AgeOfInformationData(Time startTime, Time stopTime);
 
     std::vector<int> CountPhyPacketsPerGw(Time startTime, Time stopTime, int systemId);
     std::string PrintPhyPacketsPerGw(Time startTime, Time stopTime, int systemId);
@@ -192,12 +201,14 @@ class LoraPacketTracker
                                              uint8_t sf,
                                              std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
     static DataAgeInformation GetDataAoi();
+    static void InsertDataAoi(const std::map<ns3::lorawan::LoraDeviceAddress,
+                                             std::vector<RetransmissionStatus>>& DataPackets);
+    static void CountMetricAoi();
 
   private:
     PhyPacketData m_packetTracker;
     MacPacketData m_macPacketTracker;
-    static std::map<Ptr<const Packet>, DataAoi> aoiMap;
-    RetransmissionData m_reTransmissionTracker;
+    static RetransmissionData m_reTransmissionTracker;
     static DataAgeInformation m_dataAoi;
 };
 

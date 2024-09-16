@@ -119,9 +119,9 @@ enum simulationType
     S_ALARM_SF7
 };
 
-
 // Função para escrever dados em arquivos para um SF específico
-void WriteDataAoi(const std::string& filename, const DataAgeInformation& m_dataAoi, uint8_t SF)
+void
+WriteDataAoi(const std::string& filename, const DataAgeInformation& m_dataAoi, uint8_t SF)
 {
     // Abre o arquivo para primarySeries
     std::string primaryFilename = filename + "P";
@@ -148,30 +148,34 @@ void WriteDataAoi(const std::string& filename, const DataAgeInformation& m_dataA
     {
         const auto& seriesData = it->second;
 
-        // Ordena o primarySeries pelo eixo x (primeiro elemento do par)
-        auto sortedPrimary = seriesData.primarySeries;
-        std::sort(sortedPrimary.begin(),
-                  sortedPrimary.end(),
-                  [](const std::pair<double, double>& a, const std::pair<double, double>& b) {
-                      return a.first < b.first;
-                  });
-
-        // Escreve os dados ordenados de primarySeries
-        for (const auto& point : sortedPrimary)
+        // Calcula a média dos valores y em primarySeries
+        double sumY = 0.0;
+        for (const auto& point : seriesData.primarySeries)
         {
-            primaryFile << point.first << " " << point.second << std::endl;
+            sumY += point.second;
+        }
+        double meanY = sumY / seriesData.primarySeries.size();
+
+        // Escreve o ponto (0, 0) no início do arquivo
+        primaryFile << "0 0 " << meanY << std::endl;
+
+        // Escreve os dados de primarySeries com a média apenas na primeira linha
+        bool firstLine = true;
+        for (const auto& point : seriesData.primarySeries)
+        {
+            if (firstLine)
+            {
+                primaryFile << point.first << " " << point.second << " " << meanY << std::endl;
+                firstLine = false;
+            }
+            else
+            {
+                primaryFile << point.first << " " << point.second << std::endl;
+            }
         }
 
-        // Ordena o secondarySeries pelo eixo x
-        auto sortedSecondary = seriesData.secondarySeries;
-        std::sort(sortedSecondary.begin(),
-                  sortedSecondary.end(),
-                  [](const std::pair<double, double>& a, const std::pair<double, double>& b) {
-                      return a.first < b.first;
-                  });
-
-        // Escreve os dados ordenados de secondarySeries
-        for (const auto& point : sortedSecondary)
+        // Escreve os dados de secondarySeries
+        for (const auto& point : seriesData.secondarySeries)
         {
             secondaryFile << point.first << " " << point.second << std::endl;
         }
@@ -185,7 +189,6 @@ void WriteDataAoi(const std::string& filename, const DataAgeInformation& m_dataA
     primaryFile.close();
     secondaryFile.close();
 }
-
 
 void
 simulationConfig(simulationType type, std::map<ns3::Ptr<ns3::Node>, deviceType> deviceTypeMap)
@@ -1295,19 +1298,20 @@ main(int argc, char* argv[])
     metricsResultFile(helper.GetPacketTracker(), ALARM_DEVICE, fileData, fileMetric);
     metricsResultFile(helper.GetPacketTracker(), REGULAR_DEVICE, fileData, fileMetric);
     metricsResultFile(helper.GetPacketTracker(), ALL, fileData, fileMetric);
-    DataAgeInformation dataAoi =
-        LoraPacketTracker::AgeOfInformationData(Seconds(0), appStopTime, AoIPlottingDevices);
 
-    std::cout << "tamanho de dataAoi: " << dataAoi.size() << std::endl;
+    LoraPacketTracker::AgeOfInformationData(Seconds(0), appStopTime);
+
+    /* DataAgeInformation dataAoi = LoraPacketTracker::GetDataAoi();
+    std::cout << dataAoi.size() << std::endl;
 
     string fileAoi = fileMetric + "AoIData/";
-
-    // Ordena os valores para cada chave
 
     for (uint8_t i = SF7; i <= SF12; i++)
     {
         string fileMetricAoI = fileAoi + "SF" + to_string(i);
         WriteDataAoi(fileMetricAoI, dataAoi, i);
-    }
+    } */
+
+    LoraPacketTracker::CountMetricAoi();
     return (0);
 }
