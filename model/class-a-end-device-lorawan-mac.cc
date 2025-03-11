@@ -189,12 +189,13 @@ ClassAEndDeviceLorawanMac::Receive(Ptr<const Packet> packet)
                 {
                     uint8_t txs = m_maxNumbTx - (m_retxParams.retxLeft);
                     m_requiredTxCallback(txs,
-										 GetSfFromDataRate (m_dataRate),
+                                         GetSfFromDataRate(m_dataRate),
                                          false,
                                          m_retxParams.firstAttempt,
                                          m_retxParams.packet);
                     NS_LOG_DEBUG("Failure: no more retransmissions left. Used "
-                                 << unsigned(txs) << " transmissions.");
+                                 << unsigned(txs) << " transmissions."
+                                 << "packet: " << m_retxParams.packet);
 
                     // Reset retransmission parameters
                     resetRetransmissionParameters();
@@ -220,9 +221,14 @@ ClassAEndDeviceLorawanMac::Receive(Ptr<const Packet> packet)
         else
         {
             uint8_t txs = m_maxNumbTx - (m_retxParams.retxLeft);
-            m_requiredTxCallback(txs, GetSfFromDataRate (m_dataRate), false, m_retxParams.firstAttempt, m_retxParams.packet);
-            NS_LOG_DEBUG("Failure: no more retransmissions left. Used " << unsigned(txs)
-                                                                        << " transmissions.");
+            m_requiredTxCallback(txs,
+                                 GetSfFromDataRate(m_dataRate),
+                                 false,
+                                 m_retxParams.firstAttempt,
+                                 m_retxParams.packet);
+            NS_LOG_DEBUG("Failure: no more retransmissions left. Used "
+                         << unsigned(txs) << " transmissions."
+                         << "packet: " << m_retxParams.packet);
 
             // Reset retransmission parameters
             resetRetransmissionParameters();
@@ -251,9 +257,14 @@ ClassAEndDeviceLorawanMac::FailedReception(Ptr<const Packet> packet)
         else
         {
             uint8_t txs = m_maxNumbTx - (m_retxParams.retxLeft);
-            m_requiredTxCallback(txs, GetSfFromDataRate (m_dataRate), false, m_retxParams.firstAttempt, m_retxParams.packet);
-            NS_LOG_DEBUG("Failure: no more retransmissions left. Used " << unsigned(txs)
-                                                                        << " transmissions.");
+            m_requiredTxCallback(txs,
+                                 GetSfFromDataRate(m_dataRate),
+                                 false,
+                                 m_retxParams.firstAttempt,
+                                 m_retxParams.packet);
+            NS_LOG_DEBUG("Failure: no more retransmissions left. Used "
+                         << unsigned(txs) << " transmissions."
+                         << "packet: " << m_retxParams.packet);
 
             // Reset retransmission parameters
             resetRetransmissionParameters();
@@ -370,6 +381,7 @@ ClassAEndDeviceLorawanMac::OpenSecondReceiveWindow()
     m_closeSecondWindow = Simulator::Schedule(Seconds(m_receiveWindowDurationInSymbols * tSym),
                                               &ClassAEndDeviceLorawanMac::CloseSecondReceiveWindow,
                                               this);
+
 }
 
 void
@@ -414,9 +426,16 @@ ClassAEndDeviceLorawanMac::CloseSecondReceiveWindow()
                  m_phy->GetObject<EndDeviceLoraPhy>()->GetState() != EndDeviceLoraPhy::RX)
         {
             uint8_t txs = m_maxNumbTx - (m_retxParams.retxLeft);
-            m_requiredTxCallback(txs, GetSfFromDataRate (m_dataRate), false, m_retxParams.firstAttempt, m_retxParams.packet);
-            NS_LOG_DEBUG("Failure: no more retransmissions left. Used " << unsigned(txs)
-                                                                        << " transmissions.");
+            m_requiredTxCallback(txs,
+                                 GetSfFromDataRate(m_dataRate),
+                                 false,
+                                 m_retxParams.firstAttempt,
+                                 m_retxParams.packet);
+
+            NS_LOG_DEBUG("2Failure: no more retransmissions left. Used "
+                         << unsigned(m_maxNumbTx) << " - " << unsigned(m_retxParams.retxLeft)
+                         << " = " << unsigned(txs) << " transmissions."
+                         << " Packet: " << m_retxParams.packet);
 
             // Reset retransmission parameters
             resetRetransmissionParameters();
@@ -430,10 +449,22 @@ ClassAEndDeviceLorawanMac::CloseSecondReceiveWindow()
     else
     {
         uint8_t txs = m_maxNumbTx - (m_retxParams.retxLeft);
-        m_requiredTxCallback(txs, GetSfFromDataRate (m_dataRate), true, m_retxParams.firstAttempt, m_retxParams.packet);
+        m_requiredTxCallback(txs,
+                             GetSfFromDataRate(m_dataRate),
+                             true,
+                             m_retxParams.firstAttempt,
+                             m_retxParams.packet);
         NS_LOG_INFO(
             "We have " << unsigned(m_retxParams.retxLeft)
-                       << " transmissions left. We were not transmitting confirmed messages.");
+                       << " transmissions left. We were not transmitting confirmed messages."
+                       << "packet: " << m_retxParams.packet);
+
+        NS_LOG_INFO("Transmitting message:"
+                    << "\n - Number of transmissions: " << unsigned(txs)
+                    << "\n - Spreading Factor: " << unsigned(GetSfFromDataRate(m_dataRate))
+                    << "\n - First Attempt Time: " << m_retxParams.firstAttempt.GetSeconds()
+                    << " seconds"
+                    << "\n - Packet Pointer: " << m_retxParams.packet);
 
         // Reset retransmission parameters
         resetRetransmissionParameters();

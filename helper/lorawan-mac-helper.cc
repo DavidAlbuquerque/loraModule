@@ -510,37 +510,51 @@ LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
         {
             mac->SetDataRate(5);
             sfQuantity[0] = sfQuantity[0] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)7);
         }
         else if (rxPower > *(edSensitivity + 1))
         {
             mac->SetDataRate(4);
             sfQuantity[1] = sfQuantity[1] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)8);
         }
         else if (rxPower > *(edSensitivity + 2))
         {
             mac->SetDataRate(3);
             sfQuantity[2] = sfQuantity[2] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)9);
         }
         else if (rxPower > *(edSensitivity + 3))
         {
             mac->SetDataRate(2);
             sfQuantity[3] = sfQuantity[3] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)10);
         }
         else if (rxPower > *(edSensitivity + 4))
         {
             mac->SetDataRate(1);
             sfQuantity[4] = sfQuantity[4] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)11);
         }
         else if (rxPower > *(edSensitivity+5))
         {
             mac->SetDataRate (0);
             sfQuantity[5] = sfQuantity[5] + 1;
 
+            edPhy->SetSpreadingFactor((uint8_t)12);
+
         }
         else // Device is out of range. Assign SF12.
         {
             mac->SetDataRate (0);
             sfQuantity[5] = sfQuantity[5] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)12);
         }
         /*
 
@@ -596,7 +610,8 @@ LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
 
     return sfQuantity;
 
-} //  end function
+}
+ //  end function
 
 std::vector<int>
 LorawanMacHelper::SetSpreadingFactorsGivenDistribution(NodeContainer endDevices,

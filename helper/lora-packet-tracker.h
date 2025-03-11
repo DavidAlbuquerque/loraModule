@@ -9,6 +9,9 @@
 #ifndef LORA_PACKET_TRACKER_H
 #define LORA_PACKET_TRACKER_H
 
+#include "ns3/lora-device-address.h"
+#include "ns3/lora-frame-header.h"
+#include "ns3/node-container.h"
 #include "ns3/nstime.h"
 #include "ns3/packet.h"
 
@@ -53,12 +56,12 @@ struct PacketStatus
  */
 struct MacPacketStatus
 {
-    Ptr<const Packet> packet; 			//!< Packet being tracked
-    uint32_t senderId;        			//!< Node id of the packet sender
-	uint8_t sf; 						//!< sf of the packet sender
-    Time sendTime;     					//!< Timestamp of the pkt leaving MAC layer to go down the stack of sender
-    Time receivedTime; 					//!< Time of first reception (placeholder field)
-                       					//!< \todo Field set to max and not used
+    Ptr<const Packet> packet; //!< Packet being tracked
+    uint32_t senderId;        //!< Node id of the packet sender
+    uint8_t sf;               //!< sf of the packet sender
+    Time sendTime;     //!< Timestamp of the pkt leaving MAC layer to go down the stack of sender
+    Time receivedTime; //!< Time of first reception (placeholder field)
+                       //!< \todo Field set to max and not used
     std::map<int, Time> receptionTimes; //!< Timestamp of the pkt leaving MAC layer to go up the
                                         //!< stack, mapped by receiver's node id
 };
@@ -72,14 +75,52 @@ struct RetransmissionStatus
 {
     Time firstAttempt;    //!< Timestamp of the first transmission attempt
     Time finishTime;      //!< Timestamp of the conclusion of the retransmission process
-	uint8_t sf;			  //!< sf of the sender
+    uint8_t sf;           //!< sf of the sender
     uint8_t reTxAttempts; //!< Number of transmissions attempted during the process
     bool successful;      //!< Whether the retransmission procedure was successful
+};
+
+const int MAXRTX = 30; // Número max de retransmissão
+
+struct DataAoi
+{
+    ns3::Time firstAttempt;
+    ns3::Time finishAttempt;
+};
+
+struct deviceFCtn
+{
+    uint16_t id;
+    uint16_t FCtn = 0;
+};
+
+enum deviceType
+{
+    ALARM_DEVICE = 0,
+    REGULAR_DEVICE,
+    ALL
+};
+
+struct MetricsAoi
+{
+    double media;
+    double desvioPadrao;
+    double maxY;
+    double minY;
 };
 
 typedef std::map<Ptr<const Packet>, MacPacketStatus> MacPacketData;
 typedef std::map<Ptr<const Packet>, PacketStatus> PhyPacketData;
 typedef std::map<Ptr<const Packet>, RetransmissionStatus> RetransmissionData;
+typedef std::pair<double, double> Point;
+
+struct SeriesData
+{
+    std::vector<Point> primarySeries;   // delta1
+    std::vector<Point> secondarySeries; // delta
+};
+
+typedef std::map<u_int8_t, SeriesData> DataAgeInformation;
 
 /**
  * \ingroup lorawan
@@ -167,7 +208,7 @@ class LoraPacketTracker
      * \param packet The packet being retransmitted.
      */
     void RequiredTransmissionsCallback(uint8_t reqTx,
-									   uint8_t sf,
+                                       uint8_t sf,
                                        bool success,
                                        Time firstAttempt,
                                        Ptr<Packet> packet);
@@ -257,9 +298,8 @@ class LoraPacketTracker
      * number of packets that were received by at least one gateway.
      */
     std::string CountMacPacketsGlobally(Time startTime, Time stopTime);
-	/** I'm including the specific sf in the handler */
+    /** I'm including the specific sf in the handler */
     std::string CountMacPacketsGlobally(Time startTime, Time stopTime, uint8_t sf);
-
 
     /**
      * In a time interval, count packets to evaluate the performance at MAC level of the whole
@@ -273,29 +313,110 @@ class LoraPacketTracker
      * number of packets that generated a successful acknowledgment.
      */
     std::string CountMacPacketsGloballyCpsr(Time startTime, Time stopTime);
-	/** I'm including the specif sf in the handler */
+    /** I'm including the specif sf in the handler */
     std::string CountMacPacketsGloballyCpsr(Time startTime, Time stopTime, uint8_t sf);
 
-	//std::string CountMacPacketsGloballyDelay (Time startTime, 
-	//										  Time stopTime, 
-	//										  uint8_t sf);
-	std::string CountMacPacketsGloballyDelay (Time startTime, 
-											  Time stopTime, 
-											  uint32_t gwId, 
-											  uint32_t gwNum);
-	/** I'm including the specif sf in the handler */    
-	std::string CountMacPacketsGloballyDelay (Time startTime, 
-											  Time stopTime, 
-											  uint32_t gwId, 
-											  uint32_t gwNum,
-											  uint8_t sf);
+    std::string CountSuccessfulRetransmissions(Time startTime,
+                                               Time stopTime,
+                                               uint8_t sf,
+                                               std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
 
+    std::string CountSuccessfulRetransmissions(Time startTime,
+                                               Time stopTime,
 
+                                               std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    std::string CountMacPacketsGlobally(Time startTime,
+                                        Time stopTime,
+                                        std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    std::string CountMacPacketsGlobally(Time startTime,
+                                        Time stopTime,
+                                        uint8_t sf,
+                                        std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    std::string CountMacPacketsGloballyDelay(Time startTime,
+                                             Time stopTime,
+                                             uint32_t gwId,
+                                             uint32_t gwNum);
+
+    std::string CountMacPacketsGloballyDelay(Time startTime,
+                                             Time stopTime,
+                                             uint32_t gwId,
+                                             uint32_t gwNum,
+                                             uint8_t sf);
+
+    std::string CountMacPacketsGloballyDelay(Time startTime,
+                                             Time stopTime,
+                                             uint32_t gwId,
+                                             uint32_t gwNum,
+                                             std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    std::string CountMacPacketsGloballyDelay(Time startTime,
+                                             Time stopTime,
+                                             uint32_t gwId,
+                                             uint32_t gwNum,
+                                             uint8_t sf,
+                                             std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    std::string CountMacPacketsGloballyDelayWithRetransmission(Time startTime,
+                                                               Time stopTime,
+                                                               uint32_t gwId,
+                                                               uint32_t gwNum);
+
+    std::string CountMacPacketsGloballyDelayWithRetransmission(Time startTime,
+                                                               Time stopTime,
+                                                               uint32_t gwId,
+                                                               uint32_t gwNum,
+                                                               uint8_t sf);
+
+    std::string CountMacPacketsGloballyDelayWithRetransmission(
+        Time startTime,
+        Time stopTime,
+        uint32_t gwId,
+        uint32_t gwNum,
+        std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    std::string CountMacPacketsGloballyDelayWithRetransmission(
+        Time startTime,
+        Time stopTime,
+        uint32_t gwId,
+        uint32_t gwNum,
+        uint8_t sf,
+        std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    /*AOI*/
+
+    std::string CountAgeOfInformationGlobally(Time startTime, Time stopTime, uint8_t sf);
+    std::string CountAgeOfInformationGlobally(Time startTime,
+                                              Time stopTime,
+                                              uint8_t sf,
+                                              std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+    std::string CountAgeOfInformationGlobally(Time startTime,
+                                              Time stopTime,
+                                              std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
+
+    static void ProcessAndOrganizeAoiPacketsPlot(
+        std::map<LoraDeviceAddress, uint8_t> AoIPlottingDevices);
+
+    static void OrganizeRetransmittedPackets();
+
+    static void CalculateAndInsertAoiMetrics(
+        const std::map<ns3::lorawan::LoraDeviceAddress, std::vector<RetransmissionStatus>>&
+            DataPackets);
+    static void CountMetricAoi();
+
+    static DataAgeInformation GetDataAoi();
+
+    static void PrintRetransmissionData();
+    static void PrintRetransmissionData2();
 
   private:
-    PhyPacketData m_packetTracker;              //!< Packet map of PHY layer metrics
-    MacPacketData m_macPacketTracker;           //!< Packet map of MAC layer metrics
-    RetransmissionData m_reTransmissionTracker; //!< Packet map of retransmission process metrics
+    PhyPacketData m_packetTracker;           //!< Packet map of PHY layer metrics
+    static MacPacketData m_macPacketTracker; //!< Packet map of MAC layer metrics
+    static RetransmissionData
+        m_reTransmissionTracker; //!< Packet map of retransmission process metrics
+    static DataAgeInformation m_dataAoi;
 };
 } // namespace lorawan
 } // namespace ns3
