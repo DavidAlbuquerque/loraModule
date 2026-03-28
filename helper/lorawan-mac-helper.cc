@@ -13,6 +13,8 @@
 #include "ns3/log.h"
 #include "ns3/lora-net-device.h"
 #include "ns3/random-variable-stream.h"
+#include "ns3/assert.h"
+
 
 namespace ns3
 {
@@ -278,14 +280,14 @@ LorawanMacHelper::ConfigureForEuRegion(Ptr<GatewayLorawanMac> gwMac) const
         gwPhy->ResetReceptionPaths();
 
         std::vector<double> frequencies;
-      	frequencies.push_back(867.1);
-      	frequencies.push_back(867.3);
-      	frequencies.push_back(867.5);
-      	frequencies.push_back(867.7);
-      	frequencies.push_back(867.9);
-      	frequencies.push_back(868.1);
-      	frequencies.push_back(868.3);
-      	frequencies.push_back(868.5);
+        frequencies.push_back(867.1);
+        frequencies.push_back(867.3);
+        frequencies.push_back(867.5);
+        frequencies.push_back(867.7);
+        frequencies.push_back(867.9);
+        frequencies.push_back(868.1);
+        frequencies.push_back(868.3);
+        frequencies.push_back(868.5);
 
         for (auto& f : frequencies)
         {
@@ -319,19 +321,19 @@ LorawanMacHelper::ApplyCommonEuConfigurations(Ptr<LorawanMac> lorawanMac) const
     //////////////////////
     // Default channels //
     //////////////////////
-   	Ptr<LogicalLoraChannel> lc1 = CreateObject<LogicalLoraChannel>(867.1, 0, 5);
-  	Ptr<LogicalLoraChannel> lc2 = CreateObject<LogicalLoraChannel>(867.3, 0, 5);
-  	Ptr<LogicalLoraChannel> lc3 = CreateObject<LogicalLoraChannel>(867.5, 0, 5);
-  	Ptr<LogicalLoraChannel> lc4 = CreateObject<LogicalLoraChannel>(867.7, 0, 5);
-  	Ptr<LogicalLoraChannel> lc5 = CreateObject<LogicalLoraChannel>(867.9, 0, 5);
-  	Ptr<LogicalLoraChannel> lc6 = CreateObject<LogicalLoraChannel>(868.1, 0, 5);
-  	Ptr<LogicalLoraChannel> lc7 = CreateObject<LogicalLoraChannel>(868.3, 0, 5);
-  	Ptr<LogicalLoraChannel> lc8 = CreateObject<LogicalLoraChannel>(868.5, 0, 5);
-  	channelHelper.AddChannel(lc1);
-  	channelHelper.AddChannel(lc2);
-  	channelHelper.AddChannel(lc3);
+    Ptr<LogicalLoraChannel> lc1 = CreateObject<LogicalLoraChannel>(867.1, 0, 5);
+    Ptr<LogicalLoraChannel> lc2 = CreateObject<LogicalLoraChannel>(867.3, 0, 5);
+    Ptr<LogicalLoraChannel> lc3 = CreateObject<LogicalLoraChannel>(867.5, 0, 5);
+    Ptr<LogicalLoraChannel> lc4 = CreateObject<LogicalLoraChannel>(867.7, 0, 5);
+    Ptr<LogicalLoraChannel> lc5 = CreateObject<LogicalLoraChannel>(867.9, 0, 5);
+    Ptr<LogicalLoraChannel> lc6 = CreateObject<LogicalLoraChannel>(868.1, 0, 5);
+    Ptr<LogicalLoraChannel> lc7 = CreateObject<LogicalLoraChannel>(868.3, 0, 5);
+    Ptr<LogicalLoraChannel> lc8 = CreateObject<LogicalLoraChannel>(868.5, 0, 5);
+    channelHelper.AddChannel(lc1);
+    channelHelper.AddChannel(lc2);
+    channelHelper.AddChannel(lc3);
     channelHelper.AddChannel(lc4);
-  	channelHelper.AddChannel(lc5);
+    channelHelper.AddChannel(lc5);
     channelHelper.AddChannel(lc6);
     channelHelper.AddChannel(lc7);
     channelHelper.AddChannel(lc8);
@@ -541,17 +543,16 @@ LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
 
             edPhy->SetSpreadingFactor((uint8_t)11);
         }
-        else if (rxPower > *(edSensitivity+5))
+        else if (rxPower > *(edSensitivity + 5))
         {
-            mac->SetDataRate (0);
+            mac->SetDataRate(0);
             sfQuantity[5] = sfQuantity[5] + 1;
 
             edPhy->SetSpreadingFactor((uint8_t)12);
-
         }
         else // Device is out of range. Assign SF12.
         {
-            mac->SetDataRate (0);
+            mac->SetDataRate(0);
             sfQuantity[5] = sfQuantity[5] + 1;
 
             edPhy->SetSpreadingFactor((uint8_t)12);
@@ -609,9 +610,9 @@ LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
     } // end loop on nodes
 
     return sfQuantity;
-
 }
- //  end function
+
+//  end function
 
 std::vector<int>
 LorawanMacHelper::SetSpreadingFactorsGivenDistribution(NodeContainer endDevices,
@@ -649,6 +650,7 @@ LorawanMacHelper::SetSpreadingFactorsGivenDistribution(NodeContainer endDevices,
             loraNetDevice->GetMac()->GetObject<ClassAEndDeviceLorawanMac>();
         NS_ASSERT(mac);
 
+
         double prob = uniformRV->GetValue(0, 1);
 
         // NS_LOG_DEBUG ("Probability: " << prob);
@@ -656,6 +658,7 @@ LorawanMacHelper::SetSpreadingFactorsGivenDistribution(NodeContainer endDevices,
         {
             mac->SetDataRate(5);
             sfQuantity[0] = sfQuantity[0] + 1;
+
         }
         else if (prob > cumdistr[0] && prob < cumdistr[1])
         {
@@ -688,6 +691,86 @@ LorawanMacHelper::SetSpreadingFactorsGivenDistribution(NodeContainer endDevices,
     return sfQuantity;
 
 } //  end function
+
+std::vector<uint16_t>
+LorawanMacHelper::SetSpreadingFactorsEAB(NodeContainer endDevices, double rad)
+{
+    NS_LOG_FUNCTION_NOARGS();
+
+    std::vector<uint16_t> sfQuantity(6, 0);
+    double pos = 0;
+    for (NodeContainer::Iterator j = endDevices.Begin(); j != endDevices.End(); ++j)
+    {
+        Ptr<Node> object = *j;
+        Ptr<MobilityModel> position = object->GetObject<MobilityModel>();
+        //NS_ASSERT(position != NULL);
+        Ptr<NetDevice> netDevice = object->GetDevice(0);
+        Ptr<LoraNetDevice> loraNetDevice = netDevice->GetObject<LoraNetDevice>();
+        //NS_ASSERT(loraNetDevice != NULL);
+        Ptr<ClassAEndDeviceLorawanMac> mac =
+            loraNetDevice->GetMac()->GetObject<ClassAEndDeviceLorawanMac>();
+        //NS_ASSERT(mac != NULL); 
+
+        Ptr<EndDeviceLoraPhy> edPhy = loraNetDevice->GetPhy()->GetObject<EndDeviceLoraPhy>();
+
+        pos = sqrt(pow(position->GetPosition().x, 2) + pow(position->GetPosition().y, 2));
+
+        if (pos <= rad / sqrt(6))
+        {
+            mac->SetDataRate(5);
+            sfQuantity[0] = sfQuantity[0] + 1;
+            
+            edPhy->SetSpreadingFactor((uint8_t)7);
+        }
+        else if (pos <= sqrt(2) * rad / sqrt(6))
+        {
+            mac->SetDataRate(4);
+            sfQuantity[1] = sfQuantity[1] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)8);
+        }
+        else if (pos <= sqrt(3) * rad / sqrt(6))
+        {
+            mac->SetDataRate(3);
+            sfQuantity[2] = sfQuantity[2] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)9);
+        }
+        else if (pos < (sqrt(4) * rad / sqrt(6)))
+        {
+            mac->SetDataRate(2);
+            sfQuantity[3] = sfQuantity[3] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)10);
+        }
+        else if (pos < (sqrt(5) * rad / sqrt(6)))
+        {
+            mac->SetDataRate(1);
+            sfQuantity[4] = sfQuantity[4] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)11);
+        }
+        else if (pos < rad)
+        {
+            mac->SetDataRate(0);
+            sfQuantity[5] = sfQuantity[5] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)12);
+        }
+        else
+        { // Device is out of range. Assign SF12.
+            // NS_LOG_DEBUG ("Device out of range");
+            mac->SetDataRate(0);
+            sfQuantity[0] = sfQuantity[0] + 1;
+
+            edPhy->SetSpreadingFactor((uint8_t)9);
+            // NS_LOG_DEBUG ("sfQuantity[6] = " << sfQuantity[6]);
+        } 
+
+    } // end loop on nodes
+
+    return (sfQuantity);
+} 
 
 } // namespace lorawan
 } // namespace ns3

@@ -15,6 +15,12 @@
 
 #include <fstream>
 #include <iostream>
+#include <iomanip>
+#include <sys/stat.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>  // para mkdir no Linux
+
 
 namespace ns3
 {
@@ -295,18 +301,41 @@ LoraPacketTracker::CalculateAndInsertAoiMetrics(
     NS_LOG_DEBUG("Finalizando processamento de AoI...");
 }
 
-void
-LoraPacketTracker::CountMetricAoi()
+void LoraPacketTracker::CountMetricAoi(int nDevices, const std::string& baseDir)
 {
-    std::map<uint8_t, MetricsAoi> metricsMap; // Map para armazenar as métricas por SF
+    std::map<uint8_t, MetricsAoi> metricsMap;
+
+    // Cria diretório específico para a quantidade de dispositivos
+    std::string deviceDir = baseDir + "/n" + std::to_string(nDevices) + "/";
+
+    // Cria diretório se não existir
+    struct stat st = {0};
+    if (stat(deviceDir.c_str(), &st) == -1) {
+        mkdir(deviceDir.c_str(), 0777);
+    }
+
+    // Caminhos dos arquivos
+    std::string rawFilePath = deviceDir + "AoI_raw.csv";
+    std::string filePath = deviceDir + "AoI_metrics.csv";
+
+    // Arquivo para salvar valores individuais de AoI
+    bool escreveCabecalhoRaw = false;
+    struct stat bufferRaw;
+    if (stat(rawFilePath.c_str(), &bufferRaw) != 0 || bufferRaw.st_size == 0) {
+        escreveCabecalhoRaw = true;
+    }
+
+    std::ofstream rawOut(rawFilePath, std::ios::app);
+    if (escreveCabecalhoRaw) {
+        rawOut << "nDevices;SF;AoI\n";
+    }
 
     for (const auto& metricAoi : m_dataAoi)
     {
         double sum = 0, sumOfSquares = 0, media = 0;
         int totalCount = 0;
-        double maxY =
-            std::numeric_limits<double>::lowest();        // Inicializa com o menor valor possível
-        double minY = std::numeric_limits<double>::max(); // Inicializa com o maior valor possível
+        double maxY = std::numeric_limits<double>::lowest();
+        double minY = std::numeric_limits<double>::max();
 
         const auto& primarySeries = metricAoi.second.primarySeries;
 
@@ -317,38 +346,49 @@ LoraPacketTracker::CountMetricAoi()
             sumOfSquares += y * y;
             totalCount++;
 
-            // Atualiza o valor máximo e mínimo de y
-            if (y > maxY)
-                maxY = y;
-            if (y < minY && y != 0)
-                minY = y;
+            if (y > maxY) maxY = y;
+            if (y < minY && y != 0) minY = y;
 
-            // Debug: Imprime os valores processados
-            /*  std::cout << "Processando ponto: y = " << y << std::endl;
-             std::cout << "Soma acumulada: sum = " << sum << std::endl;
-             std::cout << "Soma dos quadrados: sumOfSquares = " << sumOfSquares << std::endl;
-             std::cout << "Contagem total: totalCount = " << totalCount << std::endl;
-             std::cout << "Valor máximo atual: maxY = " << maxY << std::endl;
-             std::cout << "Valor mínimo atual (diferente de 0): minY = " << minY << std::endl; */
+            rawOut << nDevices << ";" << static_cast<int>(metricAoi.first) << ";" << y << "\n";
         }
 
-        // Calcula a média
         media = (totalCount > 0) ? (sum / totalCount) : 0;
-
-        // Calcula a variância
-        double variance =
-            (totalCount > 1) ? (sumOfSquares - (sum * sum / totalCount)) / (totalCount - 1) : 0;
-
-        // Calcula o desvio padrão
+        double variance = (totalCount > 1) ? (sumOfSquares - (sum * sum / totalCount)) / (totalCount - 1) : 0;
         double desvioPadrao = std::sqrt(variance);
 
-        // Armazena as métricas no map
         metricsMap[metricAoi.first] = {media, desvioPadrao, maxY, minY};
     }
 
-    // Exibe os resultados armazenados no map
+    rawOut.close();
+
+    // Escrita do arquivo de métricas agregadas
+    bool escreveCabecalho = false;
+    struct stat buffer;
+    if (stat(filePath.c_str(), &buffer) != 0 || buffer.st_size == 0) {
+        escreveCabecalho = true;
+    }
+
+    std::ofstream outFile(filePath, std::ios::app);
+    if (escreveCabecalho) {
+        outFile << "nDevices;SF;Media;DesvioPadrao;Maximo;Minimo\n";
+    }
+
     for (const auto& entry : metricsMap)
     {
+        outFile << nDevices << ";" 
+                << static_cast<int>(entry.first) << ";" 
+                << std::fixed << std::setprecision(6) << entry.second.media << ";" 
+                << entry.second.desvioPadrao << ";" 
+                << entry.second.maxY << ";" 
+                << entry.second.minY << "\n";
+    }
+
+    outFile.close();
+
+    // Impressão opcional no console
+    for (const auto& entry : metricsMap)
+    {
+        std::cout << "Quantidade de dispositivos: " << nDevices << std::endl;
         std::cout << "SF: " << static_cast<int>(entry.first) << std::endl;
         std::cout << "Média dos picos: " << entry.second.media << std::endl;
         std::cout << "Desvio padrão dos picos: " << entry.second.desvioPadrao << std::endl;
@@ -357,6 +397,8 @@ LoraPacketTracker::CountMetricAoi()
         std::cout << "-----------------------------------------" << std::endl;
     }
 }
+
+
 
 /////////////////
 // PHY metrics //
@@ -804,13 +846,10 @@ LoraPacketTracker::CountSuccessfulRetransmissions(
         }
     }
     std::string output("");
-    std::cout << "sent: " << sent << " received: " << received << std::endl;
-    output = std::to_string(sent) + " " + std::to_string(received) + " ";
     for (std::size_t i = 0; i < rtxCounts.size(); i++)
     {
         output += std::to_string(rtxCounts.at(i)) + " ";
     }
-    std::cout << "output: " << output << std::endl;
     return output;
 }
 
@@ -873,13 +912,10 @@ LoraPacketTracker::CountSuccessfulRetransmissions(
         }
     }
     std::string output("");
-    std::cout << "sent: " << sent << " received: " << received << std::endl;
-    output = std::to_string(sent) + " " + std::to_string(received) + " ";
     for (std::size_t i = 0; i < rtxCounts.size(); i++)
     {
         output += std::to_string(rtxCounts.at(i)) + " ";
     }
-    std::cout << "output: " << output << std::endl;
     return output;
 }
 
@@ -1105,187 +1141,6 @@ LoraPacketTracker::CountMacPacketsGloballyDelay(Time startTime,
     return (std::to_string(avgDelay));
 }
 
-std::string
-LoraPacketTracker::CountMacPacketsGloballyDelayWithRetransmission(Time startTime,
-                                                                  Time stopTime,
-                                                                  uint32_t gwId,
-                                                                  uint32_t gwNum)
-{
-    Time delaySum = Seconds(0);
-    double avgDelay = 0;
-    int packetsOutsideTransient = 0;
-
-    for (auto it = m_reTransmissionTracker.begin(); it != m_reTransmissionTracker.end(); ++it)
-    {
-        RetransmissionStatus retransStatus = it->second;
-
-        // Verifica se a primeira tentativa de envio está dentro do intervalo de tempo
-        if (retransStatus.firstAttempt > startTime && retransStatus.firstAttempt < stopTime)
-        {
-            // Somente considera pacotes que foram recebidos com sucesso
-            if (retransStatus.successful)
-            {
-                packetsOutsideTransient++;
-
-                // Calcula o delay considerando a primeira tentativa e o tempo final da
-                // retransmissão
-                Time delay = retransStatus.finishTime - retransStatus.firstAttempt;
-                delaySum += delay;
-            }
-        }
-    }
-
-    if (packetsOutsideTransient != 0)
-    {
-        avgDelay = (delaySum / packetsOutsideTransient).GetSeconds();
-    }
-
-    return std::to_string(avgDelay);
-}
-
-std::string
-LoraPacketTracker::CountMacPacketsGloballyDelayWithRetransmission(Time startTime,
-                                                                  Time stopTime,
-                                                                  uint32_t gwId,
-                                                                  uint32_t gwNum,
-                                                                  uint8_t sf)
-{
-    Time delaySum = Seconds(0);
-    double avgDelay = 0;
-    int packetsOutsideTransient = 0;
-
-    for (auto it = m_reTransmissionTracker.begin(); it != m_reTransmissionTracker.end(); ++it)
-    {
-        RetransmissionStatus retransStatus = it->second;
-
-        // Verifica se o pacote pertence ao Spreading Factor correto
-        if (retransStatus.sf == sf)
-        {
-            // Verifica se a primeira tentativa de envio está dentro do intervalo de tempo
-            if (retransStatus.firstAttempt > startTime && retransStatus.firstAttempt < stopTime)
-            {
-                // Somente considera pacotes que foram recebidos com sucesso
-                if (retransStatus.successful)
-                {
-                    packetsOutsideTransient++;
-
-                    // Calcula o delay considerando a primeira tentativa e o tempo final da
-                    // retransmissão
-                    Time delay = retransStatus.finishTime - retransStatus.firstAttempt;
-                    delaySum += delay;
-                }
-            }
-        }
-    }
-
-    if (packetsOutsideTransient != 0)
-    {
-        avgDelay = (delaySum / packetsOutsideTransient).GetSeconds();
-    }
-
-    return std::to_string(avgDelay);
-}
-
-std::string
-LoraPacketTracker::CountMacPacketsGloballyDelayWithRetransmission(
-    Time startTime,
-    Time stopTime,
-    uint32_t gwId,
-    uint32_t gwNum,
-    std::map<LoraDeviceAddress, deviceFCtn> mapDevices)
-{
-    Time delaySum = Seconds(0);
-    double avgDelay = 0;
-    int packetsOutsideTransient = 0;
-
-    for (auto it = m_reTransmissionTracker.begin(); it != m_reTransmissionTracker.end(); ++it)
-    {
-        RetransmissionStatus retransStatus = it->second;
-        Ptr<Packet> packetCopy = (*it).first->Copy();
-        LorawanMacHeader mHdr;
-        LoraFrameHeader fHdr;
-        packetCopy->RemoveHeader(mHdr);
-        packetCopy->RemoveHeader(fHdr);
-        LoraDeviceAddress address = fHdr.GetAddress();
-        if (mapDevices.find(address) != mapDevices.end())
-        {
-            // Verifica se a primeira tentativa de envio está dentro do intervalo de tempo
-            if (retransStatus.firstAttempt > startTime && retransStatus.firstAttempt < stopTime)
-            {
-                // Somente considera pacotes que foram recebidos com sucesso
-                if (retransStatus.successful)
-                {
-                    packetsOutsideTransient++;
-
-                    // Calcula o delay considerando a primeira tentativa e o tempo final da
-                    // retransmissão
-                    Time delay = retransStatus.finishTime - retransStatus.firstAttempt;
-                    delaySum += delay;
-                }
-            }
-        }
-    }
-
-    if (packetsOutsideTransient != 0)
-    {
-        avgDelay = (delaySum / packetsOutsideTransient).GetSeconds();
-    }
-
-    return std::to_string(avgDelay);
-}
-
-std::string
-LoraPacketTracker::CountMacPacketsGloballyDelayWithRetransmission(
-    Time startTime,
-    Time stopTime,
-    uint32_t gwId,
-    uint32_t gwNum,
-    uint8_t sf,
-    std::map<LoraDeviceAddress, deviceFCtn> mapDevices)
-{
-    Time delaySum = Seconds(0);
-    double avgDelay = 0;
-    int packetsOutsideTransient = 0;
-
-    for (auto it = m_reTransmissionTracker.begin(); it != m_reTransmissionTracker.end(); ++it)
-    {
-        RetransmissionStatus retransStatus = it->second;
-
-        if (retransStatus.sf == sf)
-        {
-            Ptr<Packet> packetCopy = (*it).first->Copy();
-            LorawanMacHeader mHdr;
-            LoraFrameHeader fHdr;
-            packetCopy->RemoveHeader(mHdr);
-            packetCopy->RemoveHeader(fHdr);
-            LoraDeviceAddress address = fHdr.GetAddress();
-            if (mapDevices.find(address) != mapDevices.end())
-            {
-                // Verifica se a primeira tentativa de envio está dentro do intervalo de tempo
-                if (retransStatus.firstAttempt > startTime && retransStatus.firstAttempt < stopTime)
-                {
-                    // Somente considera pacotes que foram recebidos com sucesso
-                    if (retransStatus.successful)
-                    {
-                        packetsOutsideTransient++;
-
-                        // Calcula o delay considerando a primeira tentativa e o tempo final da
-                        // retransmissão
-                        Time delay = retransStatus.finishTime - retransStatus.firstAttempt;
-                        delaySum += delay;
-                    }
-                }
-            }
-        }
-    }
-
-    if (packetsOutsideTransient != 0)
-    {
-        avgDelay = (delaySum / packetsOutsideTransient).GetSeconds();
-    }
-
-    return std::to_string(avgDelay);
-}
 
 std::string
 LoraPacketTracker::CountAgeOfInformationGlobally(Time startTime, Time stopTime, uint8_t sf)
@@ -1305,7 +1160,7 @@ LoraPacketTracker::CountAgeOfInformationGlobally(Time startTime, Time stopTime, 
                                                     << ", successful: " << it->second.successful);
                 if (it->second.successful)
                 {
-                    AOISum = it->second.finishTime - it->second.firstAttempt;
+                    AOISum += (it->second.finishTime - it->second.firstAttempt);
                     received++;
                 }
                 NS_LOG_INFO("sf: " << static_cast<int>((*it).second.sf));
@@ -1323,6 +1178,78 @@ LoraPacketTracker::CountAgeOfInformationGlobally(Time startTime, Time stopTime, 
 
     return (std::to_string(avgAOI));
 }
+
+void
+LoraPacketTracker::CountAgeOfInformationGloballyPloting(Time startTime, Time stopTime, uint8_t sf, int nDevices, const std::string& outputDir)
+{
+    Time AOISum = Seconds(0);
+    signed int received = 0;
+
+    std::vector<double> aoiValues;
+
+    for (const auto& it : m_reTransmissionTracker)
+    {
+        if (it.second.sf == sf &&
+            it.second.firstAttempt >= startTime &&
+            it.second.firstAttempt <= stopTime &&
+            it.second.successful)
+        {
+            Time aoi = it.second.finishTime - it.second.firstAttempt;
+            AOISum += aoi;
+            aoiValues.push_back(aoi.GetSeconds());
+            received++;
+
+            NS_LOG_INFO("sf: " << static_cast<int>(sf));
+            NS_LOG_INFO("enviado: " << double(it.second.firstAttempt.GetSeconds()));
+            NS_LOG_INFO("recebido: " << double(it.second.finishTime.GetSeconds()));
+        }
+    }
+
+    // Caminho: resultados/nXXX/AoI_raw_SF{sf}.csv
+    std::string pasta = outputDir + "/n" + std::to_string(nDevices);
+    std::string arquivoRaw = pasta + "/AoI_raw_SF" + std::to_string(sf) + ".csv";
+
+    // Cria o diretório se não existir
+    struct stat st = {0};
+    if (stat(pasta.c_str(), &st) == -1)
+    {
+        mkdir(pasta.c_str(), 0777);
+    }
+
+    // Verifica se precisa escrever cabeçalho
+    bool escreveCabecalho = false;
+    struct stat buffer;
+    if (stat(arquivoRaw.c_str(), &buffer) != 0 || buffer.st_size == 0) {
+        escreveCabecalho = true;
+    }
+
+    std::ofstream outputFile(arquivoRaw, std::ios::app);
+    if (outputFile.is_open())
+    {
+        if (escreveCabecalho) {
+            outputFile << "nDevices;SF;AoI;numberDevice\n";
+        }
+        int numberDevice = 0;
+        for (const double& aoi : aoiValues)
+        {
+            outputFile << nDevices << ";" << static_cast<int>(sf) << ";" << aoi << ";" << numberDevice << "\n";
+            std::cout << "AOI: " << aoi << std::endl;
+            numberDevice++;
+        }
+        outputFile << "---------------------------------------------------------------------------------------------------------------------------\n";
+        outputFile << "---------------------------------------------------------------------------------------------------------------------------\n";
+        outputFile << "---------------------------------------------------------------------------------------------------------------------------\n";        
+        outputFile.close();
+        NS_LOG_INFO("AOI values exported to " << arquivoRaw);
+    }
+    else
+    {
+        printf("Could not open file: %s\n", arquivoRaw.c_str());
+    }
+}
+
+
+
 
 std::string
 LoraPacketTracker::CountAgeOfInformationGlobally(Time startTime,
@@ -1345,7 +1272,7 @@ LoraPacketTracker::CountAgeOfInformationGlobally(Time startTime,
                                                     << ", successful: " << it->second.successful);
                 if (it->second.successful)
                 {
-                    AOISum = it->second.finishTime - it->second.firstAttempt;
+                    AOISum += (it->second.finishTime - it->second.firstAttempt);
                     received++;
                 }
                 NS_LOG_INFO("sf: " << static_cast<int>((*it).second.sf));
@@ -1382,7 +1309,7 @@ LoraPacketTracker::CountAgeOfInformationGlobally(Time startTime,
                                                 << ", successful: " << it->second.successful);
             if (it->second.successful)
             {
-                AOISum = it->second.finishTime - it->second.firstAttempt;
+                AOISum += (it->second.finishTime - it->second.firstAttempt);
                 received++;
             }
             NS_LOG_INFO("sf: " << static_cast<int>((*it).second.sf));
@@ -1450,6 +1377,88 @@ LoraPacketTracker::PrintRetransmissionData2()
 
         std::cout << "----------------------------\n";
     }
+}
+
+void
+LoraPacketTracker::CountDelayGloballyPlotting(Time startTime,
+                                             Time stopTime,
+                                             uint8_t sf,
+                                             int nDevices,
+                                             const std::string& outputDir)
+{
+    std::vector<double> delayValues;
+
+    // Coleta todos os valores de delay para o SF específico
+    for (auto itMac = m_macPacketTracker.begin(); itMac != m_macPacketTracker.end(); ++itMac)
+    {
+        if ((*itMac).second.sf == sf)
+        {
+            if ((*itMac).second.sendTime > startTime && (*itMac).second.sendTime < stopTime)
+            {
+                // Verifica cada recepção do pacote
+                for (const auto& reception : (*itMac).second.receptionTimes)
+                {
+                    // Só considera pacotes recebidos com sucesso
+                    if (reception.second != Time::Max() && reception.second > (*itMac).second.sendTime)
+                    {
+                        Time delay = reception.second - (*itMac).second.sendTime;
+                        delayValues.push_back(delay.GetSeconds());
+                    }
+                }
+            }
+        }
+    }
+
+    // Cria o diretório se não existir
+    std::string pasta = outputDir + "/n" + std::to_string(nDevices);
+    std::string arquivoRaw = pasta + "/Delay_raw_SF" + std::to_string(sf) + ".csv";
+
+    struct stat st = {0};
+    if (stat(pasta.c_str(), &st) == -1)
+    {
+        mkdir(pasta.c_str(), 0777);
+    }
+
+    // Verifica se precisa escrever cabeçalho
+    bool escreveCabecalho = false;
+    struct stat buffer;
+    if (stat(arquivoRaw.c_str(), &buffer) != 0 || buffer.st_size == 0) {
+        escreveCabecalho = true;
+    }
+
+    // Escreve os dados no arquivo
+    std::ofstream outputFile(arquivoRaw, std::ios::app);
+    if (outputFile.is_open())
+    {
+        if (escreveCabecalho) {
+            outputFile << "nDevices;SF;Delay;numberDevice\n";
+        }
+
+        int numberDevice = 0;
+        for (const double& delay : delayValues)
+        {
+            outputFile << nDevices << ";" << static_cast<int>(sf) << ";" << delay << ";" << numberDevice << "\n";
+            numberDevice++;
+        }
+        outputFile << "---------------------------------------------------------------------------------------------------------------------------\n";
+        outputFile << "---------------------------------------------------------------------------------------------------------------------------\n";
+        outputFile << "---------------------------------------------------------------------------------------------------------------------------\n";
+        outputFile.close();
+        NS_LOG_INFO("Delay values exported to " << arquivoRaw);
+    }
+    else
+    {
+        NS_LOG_ERROR("Could not open file: " << arquivoRaw);
+    }
+
+    // Opcional: imprimir estatísticas básicas
+    /* if (!delayValues.empty())
+    {
+        double sum = std::accumulate(delayValues.begin(), delayValues.end(), 0.0);
+        double mean = sum / delayValues.size();
+        std::cout << "Average Delay for SF" << static_cast<int>(sf) << ": " << mean << " seconds" << std::endl;
+        std::cout << "Total packets with delay: " << delayValues.size() << std::endl;
+    } */
 }
 
 } // namespace lorawan

@@ -80,7 +80,7 @@ struct RetransmissionStatus
     bool successful;      //!< Whether the retransmission procedure was successful
 };
 
-const int MAXRTX = 30; // Número max de retransmissão
+const int MAXRTX = 4; // Número max de retransmissão
 
 struct DataAoi
 {
@@ -396,6 +396,18 @@ class LoraPacketTracker
                                               Time stopTime,
                                               std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
 
+    void CountAgeOfInformationGloballyPloting(Time startTime,
+                                              Time stopTime,
+                                              uint8_t sf,
+                                              int nDevices,
+                                              const std::string& outputDir);
+
+    void CountDelayGloballyPlotting(Time startTime,
+                                   Time stopTime,
+                                   uint8_t sf,
+                                   int nDevices,
+                                   const std::string& outputDir);
+
     static void ProcessAndOrganizeAoiPacketsPlot(
         std::map<LoraDeviceAddress, uint8_t> AoIPlottingDevices);
 
@@ -404,7 +416,7 @@ class LoraPacketTracker
     static void CalculateAndInsertAoiMetrics(
         const std::map<ns3::lorawan::LoraDeviceAddress, std::vector<RetransmissionStatus>>&
             DataPackets);
-    static void CountMetricAoi();
+    static void CountMetricAoi(int nDevices, const std::string& baseDir);
 
     static DataAgeInformation GetDataAoi();
 

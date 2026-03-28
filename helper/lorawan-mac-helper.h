@@ -134,8 +134,10 @@ class LorawanMacHelper
      * \return A vector containing the final number of devices per DR.
      */
     static std::vector<uint16_t> SetSpreadingFactorsUp(NodeContainer endDevices,
-                                                  NodeContainer gateways,
-                                                  Ptr<LoraChannel> channel);
+                                                       NodeContainer gateways,
+                                                       Ptr<LoraChannel> channel);
+
+    static std::vector<uint16_t> SetSpreadingFactorsEAB(NodeContainer endDevices, double rad);
 
     /**
      * Randomly initialize the end devices' data rate parameter according to the given
