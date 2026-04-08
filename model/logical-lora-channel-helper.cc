@@ -109,7 +109,7 @@ LogicalLoraChannelHelper::AddChannel(double frequency)
     NS_LOG_FUNCTION(this << frequency);
 
     // Create the new channel and increment the counter
-    Ptr<LogicalLoraChannel> channel = Create<LogicalLoraChannel>(frequency);
+    Ptr<LogicalLoraChannel> channel = CreateObject<LogicalLoraChannel>(frequency);
 
     // Add it to the list
     m_channelList.push_back(channel);
@@ -143,7 +143,8 @@ LogicalLoraChannelHelper::AddSubBand(double firstFrequency,
 {
     NS_LOG_FUNCTION(this << firstFrequency << lastFrequency);
 
-    Ptr<SubBand> subBand = Create<SubBand>(firstFrequency, lastFrequency, dutyCycle, maxTxPowerDbm);
+    Ptr<SubBand> subBand =
+        CreateObject<SubBand>(firstFrequency, lastFrequency, dutyCycle, maxTxPowerDbm);
 
     m_subBandList.push_back(subBand);
 }

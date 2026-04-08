@@ -27,6 +27,7 @@
 #include "ns3/building-allocator.h"
 #include "ns3/buildings-helper.h"
 #include "ns3/forwarder-helper.h"
+#include "ns3/lora-packet-tracker.h"
 #include <algorithm>
 #include <ctime>
 
@@ -35,8 +36,6 @@ using namespace lorawan;
 using namespace std;
 
 NS_LOG_COMPONENT_DEFINE ("LorawanNetworkSimulator");
-
-#define MAXRTX 4
 
 // Network settings
 uint16_t nDevices = 200;
@@ -318,7 +317,7 @@ int main (int argc, char *argv[]){
 	
 		Ptr<EndDeviceLorawanMac> mac = loraNetDevice->GetMac ()->GetObject<EndDeviceLorawanMac>();
       	if (flagRtx){
-	  		mac->SetMaxNumberOfTransmissions (MAXRTX);
+	  		mac->SetMaxNumberOfTransmissions (kMaxMacTransmissionsPerPacket);
 	  		mac->SetMType (LorawanMacHeader::CONFIRMED_DATA_UP);
 	  	}
    	}

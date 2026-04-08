@@ -267,7 +267,7 @@ void
 ConfigureDeviceForRetransmission(Ptr<LoraNetDevice> loraNetDevice)
 {
     Ptr<EndDeviceLorawanMac> mac = loraNetDevice->GetMac()->GetObject<EndDeviceLorawanMac>();
-    mac->SetMaxNumberOfTransmissions(MAXRTX);
+    mac->SetMaxNumberOfTransmissions(kMaxMacTransmissionsPerPacket);
     mac->SetMType(LorawanMacHeader::CONFIRMED_DATA_UP);
 }
 
@@ -338,7 +338,7 @@ metricsResultFile(LoraPacketTracker& tracker,
     std::map<LoraDeviceAddress, deviceFCtn> mapDevices;
     vector<uint16_t> sfQuant;
     uint16_t nDevices = 0;
-    vector<double> rtxQuant(MAXRTX, 0);
+    vector<double> rtxQuant(kMaxMacTransmissionsPerPacket, 0);
     uint8_t sfRetransmitFlag = 0;
 
     // flagRtx = false;

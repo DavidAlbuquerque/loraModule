@@ -71,15 +71,15 @@ LoraPacketTracker::RequiredTransmissionsCallback(uint8_t reqTx,
                                                  Time firstAttempt,
                                                  Ptr<Packet> packet)
 {
-    NS_LOG_INFO("Finished retransmission attempts for a packet");
-    NS_LOG_DEBUG("Packet: " << packet << "ReqTx " << unsigned(reqTx) << ", succ: " << success
+    NS_LOG_INFO("RequiredTransmissions trace: confirmed-uplink procedure finished for a packet");
+    NS_LOG_DEBUG("Packet: " << packet << " totalMacTx=" << unsigned(reqTx) << ", succ: " << success
                             << ", firstAttempt: " << firstAttempt.GetSeconds());
 
     RetransmissionStatus entry;
     entry.firstAttempt = firstAttempt;
     entry.finishTime = Simulator::Now();
     entry.sf = sf;
-    entry.reTxAttempts = reqTx;
+    entry.totalMacTransmissions = reqTx;
     entry.successful = success;
 
     if (packet != nullptr)
@@ -745,7 +745,7 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime, Time stopTime)
         {
             sent++;
             NS_LOG_DEBUG("Found a packet");
-            NS_LOG_DEBUG("Number of attempts: " << unsigned(it->second.reTxAttempts)
+            NS_LOG_DEBUG("Total MAC transmissions: " << unsigned(it->second.totalMacTransmissions)
                                                 << ", successful: " << it->second.successful);
             if (it->second.successful)
             {
@@ -763,7 +763,7 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime, Time stopTime, ui
     NS_LOG_FUNCTION(this << startTime << stopTime);
     double sent = 0;
     double received = 0;
-    std::vector<double> rtxCounts(5, 0);
+    std::vector<double> rtxCounts(kMaxMacTransmissionsPerPacket, 0);
     for (auto it = m_reTransmissionTracker.begin(); it != m_reTransmissionTracker.end(); ++it)
     {
         if ((*it).second.sf == sf)
@@ -771,21 +771,15 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime, Time stopTime, ui
             if ((*it).second.firstAttempt >= startTime && (*it).second.firstAttempt <= stopTime)
             {
                 sent++;
-                if ((*it).second.reTxAttempts >= 1 && (*it).second.reTxAttempts <= 4)
+                if ((*it).second.totalMacTransmissions >= 1 &&
+                    (*it).second.totalMacTransmissions <= static_cast<uint8_t>(kMaxMacTransmissionsPerPacket))
                 {
-                    rtxCounts.at((*it).second.reTxAttempts - 1) += 1;
+                    rtxCounts.at((*it).second.totalMacTransmissions - 1) += 1;
                 }
 
                 NS_LOG_DEBUG("Found a packet");
-                NS_LOG_DEBUG("Number of attempts: " << unsigned(it->second.reTxAttempts)
+                NS_LOG_DEBUG("Total MAC transmissions: " << unsigned(it->second.totalMacTransmissions)
                                                     << ", successful: " << it->second.successful);
-
-                if (((*it).second.reTxAttempts == 4) && (*it).second.successful == true)
-                {
-                    rtxCounts.at((*it).second.reTxAttempts) += 1;
-
-                    NS_LOG_DEBUG("Success in the last retransmission");
-                }
 
                 if (it->second.successful)
                 {
@@ -795,7 +789,7 @@ LoraPacketTracker::CountMacPacketsGloballyCpsr(Time startTime, Time stopTime, ui
         }
     }
     std::string output("");
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < kMaxMacTransmissionsPerPacket; i++)
     {
         output += std::to_string(rtxCounts.at(i)) + " ";
     }
@@ -811,7 +805,7 @@ LoraPacketTracker::CountSuccessfulRetransmissions(
     NS_LOG_FUNCTION(this << startTime << stopTime);
     double sent = 0;
     double received = 0;
-    std::vector<double> rtxCounts(MAXRTX, 0);
+    std::vector<double> rtxCounts(kMaxMacTransmissionsPerPacket, 0);
     for (auto it = m_reTransmissionTracker.begin(); it != m_reTransmissionTracker.end(); ++it)
     {
         LorawanMacHeader mHdr;
@@ -828,14 +822,14 @@ LoraPacketTracker::CountSuccessfulRetransmissions(
             if ((*it).second.firstAttempt >= startTime && (*it).second.firstAttempt <= stopTime)
             {
                 sent++;
-                if ((*it).second.reTxAttempts >= 1 && (*it).second.reTxAttempts <= MAXRTX &&
+                if ((*it).second.totalMacTransmissions >= 1 && (*it).second.totalMacTransmissions <= kMaxMacTransmissionsPerPacket &&
                     it->second.successful)
                 {
-                    rtxCounts.at((*it).second.reTxAttempts - 1) += 1;
+                    rtxCounts.at((*it).second.totalMacTransmissions - 1) += 1;
                 }
 
                 NS_LOG_DEBUG("Found a packet");
-                NS_LOG_DEBUG("Number of attempts: " << unsigned(it->second.reTxAttempts)
+                NS_LOG_DEBUG("Total MAC transmissions: " << unsigned(it->second.totalMacTransmissions)
                                                     << ", successful: " << it->second.successful);
 
                 if (it->second.successful)
@@ -863,7 +857,7 @@ LoraPacketTracker::CountSuccessfulRetransmissions(
     NS_LOG_FUNCTION(this << startTime << stopTime);
     double sent = 0;
     double received = 0;
-    std::vector<double> rtxCounts(MAXRTX, 0);
+    std::vector<double> rtxCounts(kMaxMacTransmissionsPerPacket, 0);
     for (auto it = m_reTransmissionTracker.begin(); it != m_reTransmissionTracker.end(); ++it)
     {
         if ((*it).second.sf == sf)
@@ -882,25 +876,25 @@ LoraPacketTracker::CountSuccessfulRetransmissions(
                 if ((*it).second.firstAttempt >= startTime && (*it).second.firstAttempt <= stopTime)
                 {
                     sent++;
-                    if ((*it).second.reTxAttempts >= 1 && (*it).second.reTxAttempts <= MAXRTX &&
+                    if ((*it).second.totalMacTransmissions >= 1 && (*it).second.totalMacTransmissions <= kMaxMacTransmissionsPerPacket &&
                         it->second.successful)
                     {
-                        rtxCounts.at((*it).second.reTxAttempts - 1) += 1;
+                        rtxCounts.at((*it).second.totalMacTransmissions - 1) += 1;
                     }
 
                     NS_LOG_DEBUG("Found a packet");
-                    NS_LOG_DEBUG("Number of attempts: " << unsigned(it->second.reTxAttempts)
+                    NS_LOG_DEBUG("Total MAC transmissions: " << unsigned(it->second.totalMacTransmissions)
                                                         << ", successful: "
                                                         << it->second.successful);
-                    /* if (((*it).second.reTxAttempts == MAXRTX) && (*it).second.successful == true)
+                    /* if (((*it).second.totalMacTransmissions == kMaxMacTransmissionsPerPacket) && (*it).second.successful == true)
                     {
-                        std::cout << "(*it).second.reTxAttempts: "
-                                  << static_cast<int>((*it).second.reTxAttempts) << std::endl;
+                        std::cout << "(*it).second.totalMacTransmissions: "
+                                  << static_cast<int>((*it).second.totalMacTransmissions) << std::endl;
 
-                        rtxCounts.at((*it).second.reTxAttempts) += 1;
-                        std::cout <<  rtxCounts.at((*it).second.reTxAttempts) << std::endl;
+                        rtxCounts.at((*it).second.totalMacTransmissions) += 1;
+                        std::cout <<  rtxCounts.at((*it).second.totalMacTransmissions) << std::endl;
 
-                        NS_LOG_DEBUG("Success in the last retransmission");
+                        NS_LOG_DEBUG("Success on last allowed MAC transmission");
                     } */
 
                     if (it->second.successful)
@@ -1156,7 +1150,7 @@ LoraPacketTracker::CountAgeOfInformationGlobally(Time startTime, Time stopTime, 
             if ((*it).second.firstAttempt >= startTime && (*it).second.firstAttempt <= stopTime)
             {
                 NS_LOG_DEBUG("Found a packet");
-                NS_LOG_DEBUG("Number of attempts: " << unsigned(it->second.reTxAttempts)
+                NS_LOG_DEBUG("Total MAC transmissions: " << unsigned(it->second.totalMacTransmissions)
                                                     << ", successful: " << it->second.successful);
                 if (it->second.successful)
                 {
@@ -1268,7 +1262,7 @@ LoraPacketTracker::CountAgeOfInformationGlobally(Time startTime,
             if ((*it).second.firstAttempt >= startTime && (*it).second.firstAttempt <= stopTime)
             {
                 NS_LOG_DEBUG("Found a packet");
-                NS_LOG_DEBUG("Number of attempts: " << unsigned(it->second.reTxAttempts)
+                NS_LOG_DEBUG("Total MAC transmissions: " << unsigned(it->second.totalMacTransmissions)
                                                     << ", successful: " << it->second.successful);
                 if (it->second.successful)
                 {
@@ -1305,7 +1299,7 @@ LoraPacketTracker::CountAgeOfInformationGlobally(Time startTime,
         if ((*it).second.firstAttempt >= startTime && (*it).second.firstAttempt <= stopTime)
         {
             NS_LOG_DEBUG("Found a packet");
-            NS_LOG_DEBUG("Number of attempts: " << unsigned(it->second.reTxAttempts)
+            NS_LOG_DEBUG("Total MAC transmissions: " << unsigned(it->second.totalMacTransmissions)
                                                 << ", successful: " << it->second.successful);
             if (it->second.successful)
             {
@@ -1336,14 +1330,14 @@ LoraPacketTracker::GetDataAoi()
 void
 LoraPacketTracker::PrintRetransmissionData()
 {
-    std::cout << "Retransmission Data:\n";
+    std::cout << "Confirmed-uplink outcomes (per packet):\n";
     for (auto& pair : m_reTransmissionTracker)
     {
         Ptr<const Packet> packet = pair.first;
         const RetransmissionStatus& status = pair.second;
 
         std::cout << "Packet ID: " << packet << " | "
-                  << "reTxAttempts: " << static_cast<int>(status.reTxAttempts) << " | "
+                  << "totalMacTransmissions: " << static_cast<int>(status.totalMacTransmissions) << " | "
                   << "Successful: " << (status.successful ? "Yes" : "No") << "\n";
     }
 }

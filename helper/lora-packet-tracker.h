@@ -23,6 +23,14 @@ namespace ns3
 namespace lorawan
 {
 
+/**
+ * Maximum total MAC-layer transmissions allowed per confirmed uplink packet (first transmission
+ * plus further attempts until an ACK is received or the limit is reached). This must match
+ * EndDeviceLorawanMac::SetMaxNumberOfTransmissions() / the \c MaxTransmissions attribute on the
+ * device MAC. It also sizes the per-attempt histograms in LoraPacketTracker.
+ */
+inline constexpr int kMaxMacTransmissionsPerPacket = 4;
+
 enum PhyPacketOutcome
 {
     RECEIVED,
@@ -69,18 +77,17 @@ struct MacPacketStatus
 /**
  * \ingroup lorawan
  *
- * Stores (optionally enabled) MAC layer packet retransmission process metrics of end devices.
+ * Outcome of the confirmed-uplink procedure at the end device (trace RequiredTransmissions).
+ * \c totalMacTransmissions counts every MAC transmission of the same packet (including the first).
  */
 struct RetransmissionStatus
 {
-    Time firstAttempt;    //!< Timestamp of the first transmission attempt
-    Time finishTime;      //!< Timestamp of the conclusion of the retransmission process
-    uint8_t sf;           //!< sf of the sender
-    uint8_t reTxAttempts; //!< Number of transmissions attempted during the process
-    bool successful;      //!< Whether the retransmission procedure was successful
+    Time firstAttempt; //!< Time of the first MAC transmission of this packet
+    Time finishTime;   //!< Time when the procedure ended (ACK received or failure)
+    uint8_t sf;        //!< Spreading factor used for the last reported transmission
+    uint8_t totalMacTransmissions; //!< Total MAC transmissions for this packet (1 = success on first TX)
+    bool successful; //!< True if an ACK was received before giving up
 };
-
-const int MAXRTX = 4; // Número max de retransmissão
 
 struct DataAoi
 {
@@ -200,12 +207,12 @@ class LoraPacketTracker
      */
     void MacTransmissionCallback(Ptr<const Packet> packet, uint8_t sf);
     /**
-     * Trace the exit status of a MAC layer packet retransmission process of an end device.
+     * Trace sink for the end of a confirmed-uplink procedure (RequiredTransmissions trace source).
      *
-     * \param reqTx Number of transmissions attempted during the process.
-     * \param success Whether the retransmission procedure was successful.
-     * \param firstAttempt Timestamp of the initial transmission attempt.
-     * \param packet The packet being retransmitted.
+     * \param reqTx Total MAC-layer transmissions used for this packet (including the first).
+     * \param success True if an ACK was received.
+     * \param firstAttempt Time of the first transmission of this packet.
+     * \param packet The confirmed uplink packet.
      */
     void RequiredTransmissionsCallback(uint8_t reqTx,
                                        uint8_t sf,
@@ -316,11 +323,17 @@ class LoraPacketTracker
     /** I'm including the specif sf in the handler */
     std::string CountMacPacketsGloballyCpsr(Time startTime, Time stopTime, uint8_t sf);
 
+    /**
+     * Histogram of successful deliveries: for each k in 1..kMaxMacTransmissionsPerPacket, counts
+     * packets that succeeded with exactly k total MAC transmissions. Only successful outcomes are
+     * included (see \c RetransmissionStatus::successful).
+     */
     std::string CountSuccessfulRetransmissions(Time startTime,
                                                Time stopTime,
                                                uint8_t sf,
                                                std::map<LoraDeviceAddress, deviceFCtn> mapDevices);
 
+    /** Same as the overload with \p sf, but aggregated over all spreading factors. */
     std::string CountSuccessfulRetransmissions(Time startTime,
                                                Time stopTime,
 
@@ -427,7 +440,7 @@ class LoraPacketTracker
     PhyPacketData m_packetTracker;           //!< Packet map of PHY layer metrics
     static MacPacketData m_macPacketTracker; //!< Packet map of MAC layer metrics
     static RetransmissionData
-        m_reTransmissionTracker; //!< Packet map of retransmission process metrics
+        m_reTransmissionTracker; //!< Confirmed-uplink outcomes (RequiredTransmissions) per packet
     static DataAgeInformation m_dataAoi;
 };
 } // namespace lorawan

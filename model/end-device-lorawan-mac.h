@@ -346,21 +346,22 @@ class EndDeviceLorawanMac : public LorawanMac
 
   protected:
     /**
-     * Structure representing the parameters that will be used in the
-     * retransmission procedure.
+     * State for the confirmed-uplink procedure (same application packet, multiple MAC TX if needed).
      */
     struct LoraRetxParameters
     {
-        Time firstAttempt;            //!< Timestamp of the first transmission of the packet
-        Ptr<Packet> packet = nullptr; //!< A pointer to the packet being retransmitted
-        bool waitingAck = false;      //!< Whether the packet requires explicit acknowledgment
-        uint8_t retxLeft;             //!< Number of retransmission attempts left
+        Time firstAttempt;            //!< Timestamp of the first MAC transmission of this packet
+        Ptr<Packet> packet = nullptr; //!< Confirmed uplink packet (same Ptr across retries)
+        bool waitingAck = false;      //!< Whether we are waiting for an ACK for this packet
+        uint8_t retxLeft; //!< Remaining MAC transmission budget for this packet (decremented before
+                          //!< each PHY send; aligns with \c m_maxNumbTx)
     };
 
     bool
         m_enableDRAdapt; //!< Enable data rate adaptation (ADR) during the retransmission procedure.
     uint8_t
-        m_maxNumbTx; //!< Default number of unacknowledged redundant transmissions of each packet.
+        m_maxNumbTx; //!< Max MAC transmissions per confirmed uplink (including the first); see
+                     //!< SetMaxNumberOfTransmissions.
     TracedValue<uint8_t> m_dataRate; //!< The data rate this device is using to transmit.
     TracedValue<double> m_txPower;   //!< The transmission power this device is using to transmit.
     uint8_t m_codingRate;            //!< The coding rate used by this device.

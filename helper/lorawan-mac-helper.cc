@@ -508,6 +508,12 @@ LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
         Ptr<EndDeviceLoraPhy> edPhy = loraNetDevice->GetPhy()->GetObject<EndDeviceLoraPhy>();
         const double* edSensitivity = EndDeviceLoraPhy::sensitivity;
 
+        /*
+         * BLOCO ORIGINAL (antes da restrição para SF7, SF9 e SF12 apenas)
+         *
+         * Mantido aqui para facilitar reversão: basta remover o bloco novo
+         * abaixo e descomentar este if/else-if/else.
+         */
         if (rxPower > *edSensitivity)
         {
             mac->SetDataRate(5);
@@ -557,57 +563,46 @@ LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
 
             edPhy->SetSpreadingFactor((uint8_t)12);
         }
+
+    } // end loop on endDevices
+        
         /*
+        // NOVA LÓGICA: restringe para SF7, SF9 e SF12 apenas.
+        //
+        // - SF7: dispositivos com melhor receção (acima de sensibilidade para DR5).
+        // - SF9: faixa intermediária (entre sensibilidade para DR5 e DR3).
+        // - SF12: resto (incluindo fora de alcance).
+        //
+        // Mapeamento de contadores:
+        //   sfQuantity[0] -> SF7
+        //   sfQuantity[2] -> SF9
+        //   sfQuantity[5] -> SF12
 
-        // Get the Gw sensitivity
-        Ptr<NetDevice> gatewayNetDevice = bestGateway->GetDevice (0);
-        Ptr<LoraNetDevice> gatewayLoraNetDevice = gatewayNetDevice->GetObject<LoraNetDevice> ();
-        Ptr<GatewayLoraPhy> gatewayPhy = gatewayLoraNetDevice->GetPhy ()->GetObject<GatewayLoraPhy>
-        (); const double *gwSensitivity = gatewayPhy->sensitivity;
-
-        if(rxPower > *gwSensitivity)
-          {
-            mac->SetDataRate (5);
+        if (rxPower > *edSensitivity)
+        {
+            // Mantém DR5/SF7 para os nós mais próximos
+            mac->SetDataRate(5);
             sfQuantity[0] = sfQuantity[0] + 1;
-
-          }
-        else if (rxPower > *(gwSensitivity+1))
-          {
-            mac->SetDataRate (4);
-            sfQuantity[1] = sfQuantity[1] + 1;
-
-          }
-        else if (rxPower > *(gwSensitivity+2))
-          {
-            mac->SetDataRate (3);
+            edPhy->SetSpreadingFactor((uint8_t)7);
+        }
+        else if (rxPower > *(edSensitivity + 2))
+        {
+            // Pula explicitamente o caso de SF8 (edSensitivity+1)
+            // e atribui SF9 / DR3 como intermediário.
+            mac->SetDataRate(3);
             sfQuantity[2] = sfQuantity[2] + 1;
-
-          }
-        else if (rxPower > *(gwSensitivity+3))
-          {
-            mac->SetDataRate (2);
-            sfQuantity[3] = sfQuantity[3] + 1;
-          }
-        else if (rxPower > *(gwSensitivity+4))
-          {
-            mac->SetDataRate (1);
-            sfQuantity[4] = sfQuantity[4] + 1;
-          }
-        else if (rxPower > *(gwSensitivity+5))
-          {
-            mac->SetDataRate (0);
+            edPhy->SetSpreadingFactor((uint8_t)9);
+        }
+        else
+        {
+            // Todos os restantes (inclui o que antes teria SF10/11/12
+            // e "out of range") passam a SF12.
+            mac->SetDataRate(0);
             sfQuantity[5] = sfQuantity[5] + 1;
-
-          }
-        else // Device is out of range. Assign SF12.
-          {
-            mac->SetDataRate (0);
-            sfQuantity[6] = sfQuantity[6] + 1;
-
-          }
-          */
-
-    } // end loop on nodes
+            edPhy->SetSpreadingFactor((uint8_t)12);
+        }
+    } // end loop on endDevices
+    */
 
     return sfQuantity;
 }
