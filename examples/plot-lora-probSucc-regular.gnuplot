@@ -10,8 +10,8 @@ set xrange [500:2000]
 set xtics font ",10"
 set yrange [0:100]
 set ytics font ",10"
-set ylabel "Prob. Success (%)" font "Times-Roman-Bold,16"
-set xlabel "End-Nodes" font "times-Roman-Bold,16"
+set ylabel "Success Rate Probability (%)" font "Times-Roman-Bold,20"
+set xlabel "Number of endNodes" font "Times-Roman-Bold,20"
 set output './TestResult/probSuccess_RegularOpenField_2GW.eps'
 set key bottom
 
@@ -38,7 +38,7 @@ set grid
 set origin 0.425,0.4
 set size 0.4,0.45
 set title 'zoom'
-set xlabel "End-Nodes"
+set xlabel "Number of endNodes" font "Times-Roman-Bold,20"
 set ylabel ""
 set xrange [1150:1200]
 set yrange [98.4:98.9]

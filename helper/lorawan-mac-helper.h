@@ -137,6 +137,26 @@ class LorawanMacHelper
                                                        NodeContainer gateways,
                                                        Ptr<LoraChannel> channel);
 
+    /**
+     * Same as SetSpreadingFactorsUp, but restricts the assignment to the set of
+     * Spreading Factors allowed by \p sfMask.
+     *
+     * The mask is a bitmask where bit 0 maps to SF7, bit 1 to SF8, ..., bit 5 to
+     * SF12. After computing the "natural" SF from the link budget, devices whose
+     * SF is not allowed are snapped to the nearest allowed SF. A mask of 0 (or
+     * with no SF bits set) is treated as "all SFs allowed".
+     *
+     * \param endDevices The end devices to configure.
+     * \param gateways The gateways to consider for RSSI measurements.
+     * \param channel The radio channel to consider for RSSI measurements.
+     * \param sfMask Bitmask of allowed SFs (bit0=SF7 ... bit5=SF12).
+     * \return A vector containing the final number of devices per DR.
+     */
+    static std::vector<uint16_t> SetSpreadingFactorsUp(NodeContainer endDevices,
+                                                       NodeContainer gateways,
+                                                       Ptr<LoraChannel> channel,
+                                                       uint8_t sfMask);
+
     static std::vector<uint16_t> SetSpreadingFactorsEAB(NodeContainer endDevices, double rad);
 
     /**

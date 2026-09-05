@@ -185,8 +185,8 @@ LoraInterferenceHelper::LoraInterferenceHelper()
     : m_collisionSnir(LoraInterferenceHelper::collisionSnirGoursaud)
 {
     NS_LOG_FUNCTION(this);
-m_incrementalRed = CHASECOMBINING;
-//m_incrementalRed = NOREDUNDANCY;
+//m_incrementalRed = CHASECOMBINING;
+m_incrementalRed = NOREDUNDANCY;
     SetCollisionMatrix(collisionMatrix);
 }
 

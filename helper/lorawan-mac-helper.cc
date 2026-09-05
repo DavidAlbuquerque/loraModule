@@ -459,12 +459,65 @@ LorawanMacHelper::ApplyCommonSingleChannelConfigurations(Ptr<LorawanMac> lorawan
         std::vector<uint32_t>{59, 59, 59, 123, 230, 230, 230, 230});
 }
 
+namespace
+{
+// Ajusta um índice de SF (0=SF7 ... 5=SF12) para o SF permitido mais próximo
+// segundo a máscara. Em caso de empate na distância, prefere o SF mais robusto
+// (índice maior), de modo a preservar o alcance do enlace.
+int
+SnapToAllowedSf(int sfIndex, uint8_t sfMask)
+{
+    if (sfMask & (1 << sfIndex))
+    {
+        return sfIndex;
+    }
+
+    int best = -1;
+    int bestDist = 100;
+    for (int k = 0; k <= 5; ++k)
+    {
+        if (!(sfMask & (1 << k)))
+        {
+            continue;
+        }
+        int dist = k - sfIndex;
+        if (dist < 0)
+        {
+            dist = -dist;
+        }
+        if (dist < bestDist || (dist == bestDist && k > best))
+        {
+            bestDist = dist;
+            best = k;
+        }
+    }
+
+    return (best >= 0) ? best : sfIndex;
+}
+} // namespace
+
 std::vector<uint16_t>
 LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
                                         NodeContainer gateways,
                                         Ptr<LoraChannel> channel)
 {
+    // Sem máscara: mantém o comportamento original (todos os SFs permitidos).
+    return SetSpreadingFactorsUp(endDevices, gateways, channel, 0b111111);
+}
+
+std::vector<uint16_t>
+LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
+                                        NodeContainer gateways,
+                                        Ptr<LoraChannel> channel,
+                                        uint8_t sfMask)
+{
     NS_LOG_FUNCTION_NOARGS();
+
+    // Máscara vazia equivale a permitir todos os SFs.
+    if ((sfMask & 0b111111) == 0)
+    {
+        sfMask = 0b111111;
+    }
 
     std::vector<uint16_t> sfQuantity(6, 0);
     for (auto j = endDevices.Begin(); j != endDevices.End(); ++j)
@@ -508,101 +561,42 @@ LorawanMacHelper::SetSpreadingFactorsUp(NodeContainer endDevices,
         Ptr<EndDeviceLoraPhy> edPhy = loraNetDevice->GetPhy()->GetObject<EndDeviceLoraPhy>();
         const double* edSensitivity = EndDeviceLoraPhy::sensitivity;
 
-        /*
-         * BLOCO ORIGINAL (antes da restrição para SF7, SF9 e SF12 apenas)
-         *
-         * Mantido aqui para facilitar reversão: basta remover o bloco novo
-         * abaixo e descomentar este if/else-if/else.
-         */
+        // Índice "natural" do SF segundo o link budget (0 = SF7 ... 5 = SF12).
+        int sfIndex;
         if (rxPower > *edSensitivity)
         {
-            mac->SetDataRate(5);
-            sfQuantity[0] = sfQuantity[0] + 1;
-
-            edPhy->SetSpreadingFactor((uint8_t)7);
+            sfIndex = 0; // SF7
         }
         else if (rxPower > *(edSensitivity + 1))
         {
-            mac->SetDataRate(4);
-            sfQuantity[1] = sfQuantity[1] + 1;
-
-            edPhy->SetSpreadingFactor((uint8_t)8);
+            sfIndex = 1; // SF8
         }
         else if (rxPower > *(edSensitivity + 2))
         {
-            mac->SetDataRate(3);
-            sfQuantity[2] = sfQuantity[2] + 1;
-
-            edPhy->SetSpreadingFactor((uint8_t)9);
+            sfIndex = 2; // SF9
         }
         else if (rxPower > *(edSensitivity + 3))
         {
-            mac->SetDataRate(2);
-            sfQuantity[3] = sfQuantity[3] + 1;
-
-            edPhy->SetSpreadingFactor((uint8_t)10);
+            sfIndex = 3; // SF10
         }
         else if (rxPower > *(edSensitivity + 4))
         {
-            mac->SetDataRate(1);
-            sfQuantity[4] = sfQuantity[4] + 1;
-
-            edPhy->SetSpreadingFactor((uint8_t)11);
-        }
-        else if (rxPower > *(edSensitivity + 5))
-        {
-            mac->SetDataRate(0);
-            sfQuantity[5] = sfQuantity[5] + 1;
-
-            edPhy->SetSpreadingFactor((uint8_t)12);
-        }
-        else // Device is out of range. Assign SF12.
-        {
-            mac->SetDataRate(0);
-            sfQuantity[5] = sfQuantity[5] + 1;
-
-            edPhy->SetSpreadingFactor((uint8_t)12);
-        }
-
-    } // end loop on endDevices
-        
-        /*
-        // NOVA LÓGICA: restringe para SF7, SF9 e SF12 apenas.
-        //
-        // - SF7: dispositivos com melhor receção (acima de sensibilidade para DR5).
-        // - SF9: faixa intermediária (entre sensibilidade para DR5 e DR3).
-        // - SF12: resto (incluindo fora de alcance).
-        //
-        // Mapeamento de contadores:
-        //   sfQuantity[0] -> SF7
-        //   sfQuantity[2] -> SF9
-        //   sfQuantity[5] -> SF12
-
-        if (rxPower > *edSensitivity)
-        {
-            // Mantém DR5/SF7 para os nós mais próximos
-            mac->SetDataRate(5);
-            sfQuantity[0] = sfQuantity[0] + 1;
-            edPhy->SetSpreadingFactor((uint8_t)7);
-        }
-        else if (rxPower > *(edSensitivity + 2))
-        {
-            // Pula explicitamente o caso de SF8 (edSensitivity+1)
-            // e atribui SF9 / DR3 como intermediário.
-            mac->SetDataRate(3);
-            sfQuantity[2] = sfQuantity[2] + 1;
-            edPhy->SetSpreadingFactor((uint8_t)9);
+            sfIndex = 4; // SF11
         }
         else
         {
-            // Todos os restantes (inclui o que antes teria SF10/11/12
-            // e "out of range") passam a SF12.
-            mac->SetDataRate(0);
-            sfQuantity[5] = sfQuantity[5] + 1;
-            edPhy->SetSpreadingFactor((uint8_t)12);
+            sfIndex = 5; // SF12 (inclui dispositivos fora de alcance)
         }
+
+        // Restringe ao conjunto de SFs permitido pela máscara, encaixando no
+        // SF permitido mais próximo (em qualquer direção).
+        sfIndex = SnapToAllowedSf(sfIndex, sfMask);
+
+        mac->SetDataRate(5 - sfIndex);
+        edPhy->SetSpreadingFactor((uint8_t)(7 + sfIndex));
+        sfQuantity[sfIndex] = sfQuantity[sfIndex] + 1;
+
     } // end loop on endDevices
-    */
 
     return sfQuantity;
 }

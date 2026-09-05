@@ -10,8 +10,8 @@ set xrange [0:2000]
 set xtics 400 font "Times-Roman-Bold,18"
 set yrange [0.1:1]
 set ytics font "times-Roman-bold,18"
-set ylabel "Packet Success Probability (%)" font "Times-Roman-Bold,20"
-set xlabel "# endNodes" font "times-Roman-Bold,20"
+set ylabel "Success Rate Probability (%)" font "Times-Roman-Bold,20"
+set xlabel "Number of endNodes" font "Times-Roman-Bold,20"
 set output './TestResult/probSuccess_multClass_3.eps'
 #set key bottom
 set key reverse vertical right

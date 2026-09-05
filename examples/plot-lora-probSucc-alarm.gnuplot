@@ -9,8 +9,8 @@ set xrange [500:2000]
 set xtics font ",10"
 set yrange [0:110]
 set ytics font ",10"
-set ylabel "Prob. Success (%)" font "Times-Roman-Bold,16"
-set xlabel "No. of EndDevices" font "times-Roman-Bold,16"
+set ylabel "Success Rate Probability (%)" font "Times-Roman-Bold,20"
+set xlabel "Number of endNodes" font "Times-Roman-Bold,20"
 set output './TestResult/probSuccess_AlarmOpenField_2GW.eps'
 set key bottom
 
